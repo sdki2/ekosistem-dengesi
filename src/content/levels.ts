@@ -14,6 +14,9 @@ export interface LevelDef {
   seed: number;
   rabbits: number;
   wolves: number;
+  deer?: number;
+  foxes?: number;
+  bears?: number;
   initialPlant?: [number, number];
   seasons: boolean;
   weather: boolean;
@@ -32,56 +35,56 @@ export interface LevelDef {
  */
 export const LEVELS: LevelDef[] = [
   {
-    id: 1, map: 'forest', seed: 1201, rabbits: 60, wolves: 6,
+    id: 1, map: 'forest', seed: 1201, rabbits: 60, wolves: 6, deer: 8,
     weather: false, seasons: false, randomEvents: false, scheduled: [],
     budget: 60, goal: { kind: 'survive', days: 50 },
     stars: { diversity: 55, budgetFrac: 0.3 },
     solution: 'Do nothing; the default setup cycles. Add a wolf if they drop below 3.',
   },
   {
-    id: 2, map: 'forest', seed: 2202, rabbits: 220, wolves: 0, initialPlant: [20, 50],
+    id: 2, map: 'forest', seed: 2202, rabbits: 160, wolves: 0, deer: 6, initialPlant: [20, 50],
     weather: false, seasons: false, randomEvents: false, scheduled: [],
     budget: 120, goal: { kind: 'recover', days: 60, minCover: 30 },
     stars: { diversity: 50, budgetFrac: 0.6 },
     solution: 'Place 5–8 wolves early (day 1–5) in rabbit-dense areas; optionally cull rabbits.',
   },
   {
-    id: 3, map: 'river', seed: 3303, rabbits: 60, wolves: 6,
+    id: 3, map: 'river', seed: 3303, rabbits: 60, wolves: 6, deer: 10, foxes: 3,
     weather: true, seasons: false, randomEvents: false, scheduled: [{ day: 15, kind: 'drought' }],
     budget: 80, goal: { kind: 'survive', days: 60 },
     stars: { diversity: 50, budgetFrac: 0.5 },
     solution: 'Keep wolves ≥3 and rabbits ≥25 through the drought; plant near the river.',
   },
   {
-    id: 4, map: 'forest', seed: 4404, rabbits: 60, wolves: 6,
+    id: 4, map: 'forest', seed: 4404, rabbits: 60, wolves: 6, deer: 10, foxes: 3,
     weather: true, seasons: false, randomEvents: false, scheduled: [],
     budget: 100, goal: { kind: 'stable', days: 120, maxCv: 0.55 },
     stars: { diversity: 60, budgetFrac: 0.5 },
     solution: 'Cull rabbits above ~350 (free) and keep 4+ wolves, which flattens the peaks.',
   },
   {
-    id: 5, map: 'river', seed: 5505, rabbits: 30, wolves: 3,
+    id: 5, map: 'river', seed: 5505, rabbits: 30, wolves: 3, deer: 6, foxes: 2,
     weather: true, seasons: false, randomEvents: false, scheduled: [],
     budget: 35, goal: { kind: 'survive', days: 80 },
     stars: { diversity: 50, budgetFrac: 0.6 },
     solution: 'Spend almost nothing early; save points for a wolf in the first trough (~day 50).',
   },
   {
-    id: 6, map: 'forest', seed: 6606, rabbits: 60, wolves: 6,
+    id: 6, map: 'forest', seed: 6606, rabbits: 60, wolves: 6, deer: 12, foxes: 3, bears: 2,
     weather: true, seasons: true, randomEvents: false, scheduled: [],
     budget: 80, goal: { kind: 'survive', days: 120 },
     stars: { diversity: 50, budgetFrac: 0.5 },
     solution: 'Winters crash rabbits: before winter, remove surplus wolves; in spring re-add.',
   },
   {
-    id: 7, map: 'river', seed: 7707, rabbits: 70, wolves: 7,
-    weather: true, seasons: false, randomEvents: true, scheduled: [{ day: 30, kind: 'disease', species: 0 }],
+    id: 7, map: 'river', seed: 7707, rabbits: 70, wolves: 7, deer: 10, foxes: 3, bears: 2,
+    weather: true, seasons: true, randomEvents: true, scheduled: [{ day: 30, kind: 'disease', species: 0 }],
     budget: 80, goal: { kind: 'survive', days: 100 },
     stars: { diversity: 50, budgetFrac: 0.5 },
     solution: 'After the rabbit epidemic, thin the wolves temporarily and restock rabbits.',
   },
   {
-    id: 8, map: 'river', seed: 8808, rabbits: 70, wolves: 7,
+    id: 8, map: 'river', seed: 8808, rabbits: 70, wolves: 7, deer: 12, foxes: 4, bears: 2,
     weather: true, seasons: true, randomEvents: true, scheduled: [],
     budget: 60, goal: { kind: 'survive', days: 150 },
     stars: { diversity: 50, budgetFrac: 0.5 },

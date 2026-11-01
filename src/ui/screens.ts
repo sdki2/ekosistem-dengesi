@@ -41,7 +41,7 @@ export function levelSelect(save: SaveData, cb: { play(l: LevelDef): void; back(
   LEVELS.forEach((L, i) => {
     const unlocked = i === 0 || (save.stars[LEVELS[i - 1]!.id] ?? 0) > 0;
     const info = STR.levels.list[i]!;
-    const tags = [L.map === 'river' ? `🏞️ ${M.river}` : `🌲 ${M.forest}`, L.seasons ? '🍂' : '', L.weather ? '🌦️' : '', L.randomEvents ? '⚡' : ''].filter(Boolean).join(' ');
+    const tags = [L.map === 'river' ? `🏞️ ${M.river}` : `🌲 ${M.forest}`, L.seasons ? '🍂' : '', L.weather ? '🌦️' : '', L.deer ? '🦌' : '', L.foxes ? '🦊' : '', L.bears ? '🐻' : '', L.randomEvents ? '⚡' : ''].filter(Boolean).join(' ');
     grid.append(
       h(
         'button',
@@ -88,7 +88,7 @@ export function goalText(L: LevelDef): string {
   return fmt(STR.levels.goalStable, { days: g.days, cv: g.maxCv.toFixed(2).replace('.', ',') });
 }
 
-export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; seasons: boolean; weather: boolean; deer?: number; randomEvents: boolean }): void; back(): void }): HTMLElement {
+export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; seasons: boolean; weather: boolean; deer?: number; foxes?: number; bears?: number; randomEvents: boolean }): void; back(): void }): HTMLElement {
   const M = STR.menu;
   let map: MapKind = 'forest';
   const forest = h('button', { class: 'map-opt on', onclick: () => pick('forest') }, h('b', {}, '🌲 ', M.forest), h('span', {}, M.forestDesc));
@@ -99,9 +99,11 @@ export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; season
     river.classList.toggle('on', m === 'river');
   };
   const seed = h('input', { type: 'number', value: String(randomSeed() % 100000), min: '0', 'aria-label': M.seed });
-  const seasons = h('input', { type: 'checkbox' });
+  const seasons = h('input', { type: 'checkbox', checked: true });
   const weather = h('input', { type: 'checkbox', checked: true });
-  const deer = h('input', { type: 'checkbox' });
+  const deer = h('input', { type: 'checkbox', checked: true });
+  const foxes = h('input', { type: 'checkbox', checked: true });
+  const bears = h('input', { type: 'checkbox', checked: true });
   const events = h('input', { type: 'checkbox' });
   return h(
     'div',
@@ -111,12 +113,13 @@ export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; season
     h('h4', {}, M.chooseMap),
     h('div', { class: 'map-pick' }, forest, river),
     h('div', { class: 'form-row' }, h('label', {}, M.seed), seed, h('button', { class: 'icon-btn', onclick: () => (seed.value = String(randomSeed() % 100000)) }, '🎲 ', M.randomSeed)),
-    h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', M.seasons), h('label', { class: 'toggle' }, weather, '🌦️ ', M.weather), h('label', { class: 'toggle' }, deer, '🦌 ', M.deerHerd), h('label', { class: 'toggle' }, events, '⚡ ', M.randomEvents)),
+    h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', M.seasons), h('label', { class: 'toggle' }, weather, '🌦️ ', M.weather), h('label', { class: 'toggle' }, events, '⚡ ', M.randomEvents)),
+    h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, deer, '🦌 ', M.deerHerd), h('label', { class: 'toggle' }, foxes, '🦊 ', M.foxPack), h('label', { class: 'toggle' }, bears, '🐻 ', M.bearPack)),
     h(
       'div',
       { class: 'modal-actions' },
       h('button', { class: 'icon-btn', onclick: cb.back }, '← ', M.back),
-      h('button', { class: 'icon-btn primary', onclick: () => cb.start({ map, seed: Number(seed.value) || 1, seasons: seasons.checked, weather: weather.checked, deer: deer.checked ? 12 : 0, randomEvents: events.checked }) }, '▶ ', M.start),
+      h('button', { class: 'icon-btn primary', onclick: () => cb.start({ map, seed: Number(seed.value) || 1, seasons: seasons.checked, weather: weather.checked, deer: deer.checked ? 10 : 0, foxes: foxes.checked ? 3 : 0, bears: bears.checked ? 2 : 0, randomEvents: events.checked }) }, '▶ ', M.start),
     ),
   );
 }

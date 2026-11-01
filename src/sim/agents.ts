@@ -3,7 +3,13 @@ export const enum Species {
   Wolf = 1,
   /** optional large grazer: competes with rabbits, hard but rewarding prey for wolves */
   Deer = 2,
+  /** small nocturnal hunter of rabbits; avoids wolves and bears */
+  Fox = 3,
+  /** big omnivore: berries, fish, the odd catch; hibernates in winter */
+  Bear = 4,
 }
+
+export const SPECIES_COUNT = 5;
 
 export const enum AState {
   Wander = 0,

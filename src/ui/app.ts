@@ -27,10 +27,12 @@ const TOOLS: { id: Tool; emoji: string; key: string }[] = [
   { id: 'inspect', emoji: '🔍', key: '4' },
   { id: 'remove', emoji: '✋', key: '5' },
   { id: 'deer', emoji: '🦌', key: '6' },
+  { id: 'fox', emoji: '🦊', key: '7' },
+  { id: 'bear', emoji: '🐻', key: '8' },
 ];
 
-const SPECIES_ICON = ['🐇', '🐺', '🦌'];
-const SPECIES_NAME = [STR.species.rabbit, STR.species.wolf, STR.species.deer];
+const SPECIES_ICON = ['🐇', '🐺', '🦌', '🦊', '🐻'];
+const SPECIES_NAME = [STR.species.rabbit, STR.species.wolf, STR.species.deer, STR.species.fox, STR.species.bear];
 
 export class App {
   save: SaveData = load();
@@ -107,7 +109,7 @@ export class App {
       this.stress();
     } else {
       // live demo world behind the main menu
-      this.newSession({ mode: 'sandbox', map: 'forest', seed: 1201, weather: true });
+      this.newSession({ mode: 'sandbox', map: 'forest', seed: 1201, weather: true, seasons: true, deer: 10, foxes: 3, bears: 2 });
       this.demo = true;
       this.playing = true;
       this.showMainMenu();
@@ -161,7 +163,7 @@ export class App {
     const toolbar = h('div', { class: 'toolbar', role: 'toolbar', 'aria-label': 'Araçlar' });
     for (const t of TOOLS) {
       const label = STR.tools[t.id];
-      const cost = t.id === 'rabbit' ? ECONOMY.rabbitCost : t.id === 'wolf' ? ECONOMY.wolfCost : t.id === 'deer' ? ECONOMY.deerCost : t.id === 'plant' ? ECONOMY.plantTileCost : 0;
+      const cost = t.id === 'rabbit' ? ECONOMY.rabbitCost : t.id === 'wolf' ? ECONOMY.wolfCost : t.id === 'deer' ? ECONOMY.deerCost : t.id === 'fox' ? ECONOMY.foxCost : t.id === 'bear' ? ECONOMY.bearCost : t.id === 'plant' ? ECONOMY.plantTileCost : 0;
       const tipKey = `${t.id}Tip` as 'plantTip';
       const btn = h(
         'button',
@@ -225,7 +227,7 @@ export class App {
     this.maybeTutorial();
   }
 
-  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; weather: boolean; deer?: number; randomEvents: boolean }): void {
+  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; weather: boolean; deer?: number; foxes?: number; bears?: number; randomEvents: boolean }): void {
     this.demo = false;
     this.modal.close();
     this.newSession({ mode: 'sandbox', ...o });
@@ -539,7 +541,7 @@ export class App {
     const s = this.session;
     if (this.demo) {
       // the menu demo just restarts quietly
-      this.newSession({ mode: 'sandbox', map: 'forest', seed: randomSeed() % 10000, weather: true });
+      this.newSession({ mode: 'sandbox', map: 'forest', seed: randomSeed() % 10000, weather: true, seasons: true, deer: 10, foxes: 3, bears: 2 });
       this.setPlaying(true);
       return;
     }
@@ -687,7 +689,7 @@ export class App {
     if (s.status !== 'playing') return;
     const r = s.apply(this.tool, wx, wy, this.brush);
     if (r.ok) {
-      if (this.tool === 'rabbit' || this.tool === 'wolf' || this.tool === 'deer') {
+      if (this.tool === 'rabbit' || this.tool === 'wolf' || this.tool === 'deer' || this.tool === 'fox' || this.tool === 'bear') {
         this.renderer.fx.add('place', wx, wy);
         this.audio.click('pop');
         if (this.tool === 'wolf') this.tip('firstWolf', 'keystone');
@@ -810,7 +812,7 @@ export class App {
       if (mode === 'tool' && prev) {
         const [wx, wy] = this.renderer.cam.toWorld(x, y);
         this.hoverWorld = [wx, wy];
-        const spacing = this.tool === 'rabbit' ? 0.8 : this.tool === 'wolf' || this.tool === 'deer' ? Infinity : Math.max(0.5, this.brush * 0.6);
+        const spacing = this.tool === 'rabbit' ? 0.8 : this.tool === 'wolf' || this.tool === 'deer' || this.tool === 'fox' || this.tool === 'bear' ? Infinity : Math.max(0.5, this.brush * 0.6);
         if (lastPaint && Math.hypot(wx - lastPaint[0], wy - lastPaint[1]) >= spacing) {
           lastPaint = [wx, wy];
           this.applyToolAt(wx, wy, true);

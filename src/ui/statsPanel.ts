@@ -88,7 +88,7 @@ export class StatsPanel {
       { class: 'stats', 'aria-label': S.title },
       h('button', { class: 'drawer-handle', onclick: () => this.el.classList.toggle('open'), 'aria-label': S.drawer }, h('span', { class: 'grip' }), '📊 ', S.drawer, this.handleMini),
       this.wxSection,
-      h('div', { class: 'section' }, h('div', { class: 'counters' }, counter('plants', '🌱', S.plantCover), counter('rabbits', '🐇', STR.species.rabbits), counter('wolves', '🐺', STR.species.wolves), counter('deer', '🦌', STR.species.deers)), this.today),
+      h('div', { class: 'section' }, h('div', { class: 'counters' }, counter('plants', '🌱', S.plantCover), counter('rabbits', '🐇', STR.species.rabbits), counter('wolves', '🐺', STR.species.wolves), counter('deer', '🦌', STR.species.deers), counter('fox', '🦊', STR.species.foxes), counter('bear', '🐻', STR.species.bears)), this.today),
       h('div', { class: 'section-grid' },
         h('div', { class: 'section' },
           h('h4', {}, '📈 ', S.population, seg),
@@ -96,6 +96,8 @@ export class StatsPanel {
           h('div', { class: 'legend' },
             h('span', { style: 'color:var(--rabbit)' }, h('i', { style: 'background:var(--rabbit)' }), '🐇 ', STR.species.rabbits),
             h('span', { style: 'color:#a8793c' }, h('i', { class: 'dash', style: 'background:#a8793c' }), '🦌 ', STR.species.deers, ' ×5'),
+            h('span', { style: 'color:#c4621f' }, h('i', { class: 'dash', style: 'background:#e07a34' }), '🦊 ', STR.species.foxes, ' ×5'),
+            h('span', { style: 'color:#6b4a33' }, h('i', { class: 'dash', style: 'background:#6b4a33' }), '🐻 ', STR.species.bears, ' ×10'),
             h('span', { style: 'color:var(--wolf)' }, h('i', { class: 'dash', style: 'background:var(--wolf)' }), '🐺 ', STR.species.wolves, ' ×10'),
             h('span', { style: 'color:var(--plant)' }, h('i', { class: 'dash', style: 'background:var(--plant)' }), '🌱 %'),
           ),
@@ -131,15 +133,24 @@ export class StatsPanel {
     animateNumber(this.vals.plants!, cover, (v) => `%${v.toFixed(0)}`, this.reducedMotion);
     animateNumber(this.vals.rabbits!, w.counts[0], (v) => num(Math.round(v)), this.reducedMotion);
     animateNumber(this.vals.wolves!, w.counts[1], (v) => num(Math.round(v)), this.reducedMotion);
-    const hasDeer = w.everPresent[2] === true;
-    this.vals.deer!.closest('.counter')!.toggleAttribute('hidden', !hasDeer);
-    (this.counterRow ??= this.el.querySelector('.counters') as HTMLElement).style.gridTemplateColumns = hasDeer ? 'repeat(4, 1fr)' : '';
-    if (hasDeer) animateNumber(this.vals.deer!, w.counts[2]!, (v) => num(Math.round(v)), this.reducedMotion);
+    const extra = ['deer', 'fox', 'bear'] as const;
+    let shown = 3;
+    extra.forEach((key, k) => {
+      const on = w.everPresent[2 + k] === true;
+      this.vals[key]!.closest('.counter')!.toggleAttribute('hidden', !on);
+      if (on) {
+        shown++;
+        animateNumber(this.vals[key]!, w.counts[2 + k]!, (v) => num(Math.round(v)), this.reducedMotion);
+      }
+    });
+    (this.counterRow ??= this.el.querySelector('.counters') as HTMLElement).style.gridTemplateColumns = `repeat(${shown > 4 ? 3 : shown}, 1fr)`;
     if (n > 1) {
       this.setTrend('plants', cover - hist.plants[back]!, 1);
       this.setTrend('rabbits', w.counts[0] - hist.rabbits[back]!, Math.max(1, hist.rabbits[back]! * 0.03));
       this.setTrend('wolves', w.counts[1] - hist.wolves[back]!, 0.5);
-      if (hasDeer) this.setTrend('deer', w.counts[2]! - (hist.deer[back] ?? 0), 0.5);
+      if (w.everPresent[2]) this.setTrend('deer', w.counts[2]! - (hist.deer[back] ?? 0), 0.5);
+      if (w.everPresent[3]) this.setTrend('fox', w.counts[3]! - (hist.foxes[back] ?? 0), 0.5);
+      if (w.everPresent[4]) this.setTrend('bear', w.counts[4]! - (hist.bears[back] ?? 0), 0.5);
     }
     const t = w.today;
     const S = STR.stats;
@@ -182,7 +193,7 @@ export class StatsPanel {
     let plantB = 0;
     for (let i = 0; i < w.grid.plant.length; i++) plantB += w.grid.plant[i]!;
     const status = this.pyr.update(
-      { plants: Math.round((plantB / 100) * BIOMASS.plantTile), rabbits: Math.round(w.counts[0] * BIOMASS.rabbit + w.counts[2]! * BIOMASS.deer), wolves: Math.round(w.counts[1] * BIOMASS.wolf) },
+      { plants: Math.round((plantB / 100) * BIOMASS.plantTile), rabbits: Math.round(w.counts[0] * BIOMASS.rabbit + w.counts[2]! * BIOMASS.deer), wolves: Math.round(w.counts[1] * BIOMASS.wolf + w.counts[3]! * BIOMASS.fox + w.counts[4]! * BIOMASS.bear) },
       this.reducedMotion,
     );
     if (status !== this.lastPyr) {

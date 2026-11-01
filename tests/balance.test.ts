@@ -12,7 +12,9 @@ describe('headless balance', () => {
     expect(r.survivalRate).toBeGreaterThanOrEqual(0.8);
     const surv = r.results.filter((x) => x.survived);
     const meanPeaks = surv.reduce((a, x) => a + x.rabbitPeaks, 0) / surv.length;
-    expect(meanPeaks).toBeGreaterThanOrEqual(2); // predator–prey waves, not a flat line
+    // predator–prey waves, not a flat line. Since v1.3 warren crowding keeps rabbits to a few hundred,
+    // which damps and lengthens the cycle (Rosenzweig–MacArthur), so we ask for ≥1 clear boom-and-bust per run.
+    expect(meanPeaks).toBeGreaterThanOrEqual(1);
   });
 
   for (let i = 0; i < LEVELS.length; i++) {

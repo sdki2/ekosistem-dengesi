@@ -28,6 +28,8 @@ export const BIOMASS = {
   rabbit: 1.5,
   wolf: 6,
   deer: 4,
+  fox: 3,
+  bear: 20,
 };
 
 export interface DayLog {
@@ -36,6 +38,8 @@ export interface DayLog {
   rabbits: number;
   wolves: number;
   deer: number;
+  foxes: number;
+  bears: number;
   rabbitBirths: number;
   wolfBirths: number;
   rabbitDeaths: Record<DeathCause, number>;
@@ -55,6 +59,8 @@ export class History {
   rabbits: number[] = [];
   wolves: number[] = [];
   deer: number[] = [];
+  foxes: number[] = [];
+  bears: number[] = [];
   shannon: number[] = [];
   days: DayLog[] = [];
 
@@ -65,6 +71,8 @@ export class History {
     h.rabbits = this.rabbits.slice();
     h.wolves = this.wolves.slice();
     h.deer = this.deer.slice();
+    h.foxes = this.foxes.slice();
+    h.bears = this.bears.slice();
     h.shannon = this.shannon.slice();
     h.days = this.days.map((d) => ({ ...d, rabbitDeaths: { ...d.rabbitDeaths }, wolfDeaths: { ...d.wolfDeaths } }));
     return h;

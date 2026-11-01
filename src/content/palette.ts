@@ -38,6 +38,8 @@ export const PALETTE = {
   seriesRabbit: '#c98b4e',
   seriesWolf: '#5f7fae',
   seriesDeer: '#a8793c',
+  seriesFox: '#e07a34',
+  seriesBear: '#6b4a33',
   night: [24, 34, 82] as RGB,
 };
 

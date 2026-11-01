@@ -56,7 +56,7 @@ export class PopulationChart {
     while (i0 < n - 1 && hist.t[i0]! < tStart) i0++;
     const span = Math.max(1, tEnd - tStart);
     let maxA = 10;
-    for (let i = i0; i < n; i++) maxA = Math.max(maxA, hist.rabbits[i]!, hist.wolves[i]! * 10, (hist.deer[i] ?? 0) * 5);
+    for (let i = i0; i < n; i++) maxA = Math.max(maxA, hist.rabbits[i]!, hist.wolves[i]! * 10, (hist.deer[i] ?? 0) * 5, (hist.foxes[i] ?? 0) * 5, (hist.bears[i] ?? 0) * 10);
     maxA = niceMax(maxA);
     const X = (t: number) => L + ((t - tStart) / span) * pw;
     const YA = (v: number) => T + ph - (v / maxA) * ph;
@@ -114,6 +114,8 @@ export class PopulationChart {
     line(hist.rabbits, 1, PALETTE.seriesRabbit, [], YA);
     line(hist.wolves, 10, PALETTE.seriesWolf, [7, 4], YA);
     if (hist.deer.some((v) => v > 0)) line(hist.deer, 5, PALETTE.seriesDeer, [10, 3, 2, 3], YA);
+    if (hist.foxes.some((v) => v > 0)) line(hist.foxes, 5, PALETTE.seriesFox, [3, 3], YA, 1.6);
+    if (hist.bears.some((v) => v > 0)) line(hist.bears, 10, PALETTE.seriesBear, [12, 4], YA, 2.4);
 
     // hover readout
     if (this.hoverX !== null && this.hoverX >= L && this.hoverX <= L + pw) {

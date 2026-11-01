@@ -88,6 +88,8 @@ export interface SimConfig {
     minEdible: number;
     /** global regrowth multiplier (sandbox slider) */
     regrowMul: number;
+    /** growth at night relative to the daily mean (no sunlight); day growth is raised to keep the daily total */
+    nightGrowth: number;
   };
 
   rabbit: SpeciesConfig & {
@@ -100,6 +102,10 @@ export interface SimConfig {
     /** no breeding when this many rabbits are within crowdRadius (warren density) */
     crowdMax: number;
     crowdRadius: number;
+    /** winter: energy per tick from gnawing bark and twigs in a bush */
+    winterBrowse: number;
+    /** winter: thick coat and less activity */
+    winterMetabolismMul: number;
     /** ticks of sprint before tiring */
     stamina: number;
     staminaRegen: number;
@@ -126,6 +132,41 @@ export interface SimConfig {
     browseEnergy: number;
   };
 
+  fox: SpeciesConfig & {
+    preyEnergy: number;
+    catchChance: number;
+    catchDist: number;
+    /** hunts below this energy fraction (always at night) */
+    huntBelow: number;
+    handlingTicks: number;
+    territoryRadius: number;
+    territoryMax: number;
+    /** can sniff out a rabbit hiding in a bush from this close */
+    coverDetect: number;
+    /** per-tick chance to snap up a mouse or beetle while prowling at night */
+    mouseChance: number;
+    mouseEnergy: number;
+  };
+
+  bear: SpeciesConfig & {
+    /** energy per plant unit of berries (bush tiles) */
+    berryEnergy: number;
+    /** energy per plant unit of grass and herbs */
+    grassEnergy: number;
+    biteSize: number;
+    /** per-tick chance to catch a fish while standing at the water's edge */
+    fishChance: number;
+    fishEnergy: number;
+    /** chance per tick to catch prey within 1 tile when hungry */
+    attackChance: number;
+    /** energy from a rabbit / deer caught */
+    rabbitEnergy: number;
+    deerEnergy: number;
+    /** metabolism multiplier while hibernating (winter) */
+    hibernateMul: number;
+    fullEnergy: number;
+  };
+
   wolf: SpeciesConfig & {
     /** energy gained from catching one rabbit */
     preyEnergy: number;
@@ -140,6 +181,8 @@ export interface SimConfig {
     coverDetect: number;
     /** chance per check to sniff out a hidden rabbit beyond coverDetect */
     scentChance: number;
+    /** winter: tracks in the snow give hidden prey away (scent chance multiplier) */
+    winterTrackMul: number;
     /** no breeding when this many other wolves are within territoryRadius */
     territoryMax: number;
     territoryRadius: number;
@@ -183,6 +226,8 @@ export interface SimConfig {
     wolfNightCatchMul: number;
     /** rabbits graze faster at dawn and dusk */
     rabbitTwilightBiteMul: number;
+    /** sight multiplier at night for day-active animals (rabbits, deer, bears) */
+    nightVisionDiurnal: number;
     /** hot midday rest window (day fraction) */
     siestaFrom: number;
     siestaTo: number;
@@ -219,6 +264,7 @@ export const DEFAULT_CONFIG: SimConfig = {
     biteSize: 8,
     minEdible: 6, // "root reserve": rabbits cannot graze a tile below this
     regrowMul: 0.9,
+    nightGrowth: 0.2,
   },
 
   rabbit: {
@@ -242,8 +288,10 @@ export const DEFAULT_CONFIG: SimConfig = {
     plantEnergy: 0.65,
     fullEnergy: 95,
     giveUp: 38, // optimal foraging: move on from thin patches instead of eating them bare
-    crowdMax: 4, // warren crowding limits breeding at very high density
-    crowdRadius: 2.5,
+    crowdMax: 3, // warren crowding: wide radius keeps rabbits to a few hundred
+    crowdRadius: 4.5,
+    winterBrowse: 0.35,
+    winterMetabolismMul: 0.85,
     stamina: 5, // … but only for short bursts (5 ticks), then they tire
     staminaRegen: 0.1,
     sprintCost: 0.4,
@@ -277,6 +325,66 @@ export const DEFAULT_CONFIG: SimConfig = {
     browseEnergy: 0.62,
   },
 
+  fox: {
+    maxEnergy: 70,
+    metabolism: 0.25,
+    restMetabolismMul: 0.45,
+    walkSpeed: 0.3,
+    runSpeed: 0.6,
+    vision: 4.2,
+    maturityDays: 8,
+    lifespanDays: 45,
+    lifespanJitter: 0.2,
+    reproThreshold: 52,
+    reproCooldownDays: 16,
+    litterMin: 1,
+    litterMax: 3,
+    birthEnergy: 16,
+    birthCost: 6,
+    thirstPerTick: 0.3,
+    thirstSeek: 50,
+    preyEnergy: 26,
+    catchChance: 0.55,
+    catchDist: 0.7,
+    huntBelow: 0.7,
+    handlingTicks: 8,
+    territoryRadius: 7,
+    territoryMax: 1,
+    coverDetect: 1.5,
+    mouseChance: 0.12,
+    mouseEnergy: 8,
+  },
+
+  bear: {
+    maxEnergy: 300,
+    metabolism: 0.62,
+    restMetabolismMul: 0.3,
+    walkSpeed: 0.2,
+    runSpeed: 0.45,
+    vision: 5,
+    maturityDays: 25,
+    lifespanDays: 160,
+    lifespanJitter: 0.15,
+    reproThreshold: 220,
+    reproCooldownDays: 50,
+    litterMin: 1,
+    litterMax: 2,
+    birthEnergy: 80,
+    birthCost: 30,
+    thirstPerTick: 0.25,
+    thirstSeek: 50,
+    berryEnergy: 0.8,
+    grassEnergy: 0.3,
+    biteSize: 12,
+    fishChance: 0.06,
+    fishEnergy: 30,
+    attackChance: 0.2,
+    rabbitEnergy: 30,
+    deerEnergy: 120,
+    hibernateMul: 0.08,
+    fullEnergy: 280,
+  },
+
   wolf: {
     maxEnergy: 120,
     metabolism: 0.48, // ~9.6 energy/day → ~12 days from full to starving
@@ -302,15 +410,16 @@ export const DEFAULT_CONFIG: SimConfig = {
     handlingTicks: 13, // ~2/3 of a day eating/resting after a kill
     coverDetect: 3,
     scentChance: 0.08,
-    territoryMax: 5,
-    territoryRadius: 7,
+    winterTrackMul: 4,
+    territoryMax: 3,
+    territoryRadius: 8,
     cohesion: 0.35,
     chaseCost: 0.25,
   },
 
   seasons: {
     lengthDays: 15,
-    regrow: [1.5, 1.0, 0.6, 0.25],
+    regrow: [1.4, 1.1, 0.8, 0.45],
   },
 
   weather: {
@@ -329,6 +438,7 @@ export const DEFAULT_CONFIG: SimConfig = {
   time: {
     wolfNightCatchMul: 1.1,
     rabbitTwilightBiteMul: 1.1,
+    nightVisionDiurnal: 0.6,
     siestaFrom: 0.28,
     siestaTo: 0.52,
   },
@@ -355,6 +465,8 @@ export const ECONOMY = {
   rabbitCost: 4,
   wolfCost: 15,
   deerCost: 10,
+  foxCost: 12,
+  bearCost: 30,
   /** cost per tile painted with the plant brush */
   plantTileCost: 0.25,
   /** points per day at 100 % biodiversity; scaled by the Shannon score */

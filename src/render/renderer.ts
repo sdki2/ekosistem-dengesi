@@ -5,6 +5,7 @@ import type { World } from '../sim/world';
 import { Camera } from './camera';
 import { Fx } from './fx';
 import { WeatherFx } from './weatherFx';
+import { Wx } from '../sim/weather';
 import { getSprites, mulberry, RABBIT_FRAMES, WOLF_FRAMES, type SpriteSet } from './sprites';
 
 const BAKE = 16; // px per tile for baked layers
@@ -16,6 +17,13 @@ export interface Overlay {
   brush: number;
   selectedUid: number;
   hoverUid: number;
+}
+
+/** tree kind for a tile: 0 oak, 1 round oak, 2 birch, 3 pine, 4 spruce, 5 cherry */
+function pickTreeKind(u: number, map: 'forest' | 'river', waterDist: number): number {
+  if (map === 'forest') return u < 0.32 ? 3 : u < 0.55 ? 4 : u < 0.72 ? 0 : u < 0.84 ? 1 : u < 0.94 ? 2 : 5;
+  if (waterDist <= 3) return u < 0.45 ? 2 : u < 0.75 ? 0 : 5;
+  return u < 0.3 ? 0 : u < 0.5 ? 1 : u < 0.65 ? 5 : u < 0.85 ? 3 : 2;
 }
 
 /** Draws the world. Reads simulation state only; never mutates it. */
@@ -106,7 +114,7 @@ export class WorldRenderer {
     this.trees = [];
     for (let y = 0; y < g.h; y++)
       for (let x = 0; x < g.w; x++)
-        if (g.tiles[g.idx(x, y)] === Tile.Tree) this.trees.push({ x: x + 0.5 + (rnd() - 0.5) * 0.5, y: y + 0.7 + rnd() * 0.3, v: Math.floor(rnd() * 3), phase: rnd() * 6.28, s: 1.45 + rnd() * 0.55 });
+        if (g.tiles[g.idx(x, y)] === Tile.Tree) this.trees.push({ x: x + 0.5 + (rnd() - 0.5) * 0.5, y: y + 0.7 + rnd() * 0.3, v: pickTreeKind(rnd(), w.mapKind, g.waterDist[g.idx(x, y)]!), phase: rnd() * 6.28, s: 1.45 + rnd() * 0.55 });
     this.trees.sort((a, b) => a.y - b.y);
     this.fx.clear();
     this.cam.fit();
@@ -166,6 +174,11 @@ export class WorldRenderer {
     const d = this.plantImg.data;
     const c = this.tmpColor;
     const sand: RGB = [222, 208, 170];
+    // seasonal ground: fresh spring green, golden autumn, snow in winter
+    const season = w.season();
+    const snowy = w.weatherEnabled && w.wx.kind === Wx.Snow;
+    const tint: RGB | null = season === 3 || snowy ? [240, 244, 250] : season === 2 ? [214, 168, 88] : season === 0 ? [150, 214, 112] : null;
+    const tk = season === 3 ? (snowy ? 0.7 : 0.5) : snowy ? 0.35 : season === 2 ? 0.2 : 0.08;
     for (let i = 0; i < g.plant.length; i++) {
       const t = g.tiles[i];
       if (t === Tile.Water || t === Tile.Ford) {
@@ -179,6 +192,11 @@ export class WorldRenderer {
         d[i * 4 + 2] = c[2] * 0.92;
       } else {
         plantColor(g.plant[i]!, c);
+        if (tint) {
+          c[0] += (tint[0] - c[0]) * tk;
+          c[1] += (tint[1] - c[1]) * tk;
+          c[2] += (tint[2] - c[2]) * tk;
+        }
         // gentle per-tile variation
         const v = 0.96 + this.tileHash[i]! * 0.08;
         d[i * 4] = c[0] * v;
@@ -320,6 +338,8 @@ export class WorldRenderer {
 
     const trees = this.trees;
     let ti = 0;
+    const season = w.season();
+    const treeSeason = season < 0 ? 1 : season;
     const drawTreesUntil = (yy: number) => {
       while (ti < trees.length && trees[ti]!.y <= yy) {
         const tr = trees[ti++]!;
@@ -332,7 +352,7 @@ export class WorldRenderer {
         g.save();
         g.translate(sx, sy);
         g.transform(1, 0, sway, 1, 0, 0);
-        g.drawImage(S.trees[tr.v]!, -s / 2, -s * 0.92, s, s);
+        g.drawImage(S.trees[tr.v]![treeSeason]!, -s / 2, -s * 0.92, s, s);
         g.restore();
       }
     };
@@ -368,6 +388,20 @@ export class WorldRenderer {
           img = S.rabbit[f]!;
           hop = Math.sin((phase % 1) * Math.PI) * (st === AState.Flee ? 0.3 : 0.18);
         }
+      } else if (sp === Species.Fox) {
+        size = Z * 1.05 * grow;
+        anchorX = 0.45;
+        anchorY = 0.72;
+        if (st === AState.Sleep || st === AState.Rest) img = S.fox[6]!;
+        else if (!moving) img = S.fox[0]!;
+        else img = S.fox[Math.floor((phase % 1) * 6)]!;
+      } else if (sp === Species.Bear) {
+        size = Z * 2.1 * grow;
+        anchorX = 0.47;
+        anchorY = 0.74;
+        if (st === AState.Sleep || st === AState.Rest) img = S.bear[6]!;
+        else if (!moving) img = S.bear[0]!;
+        else img = S.bear[Math.floor((phase % 1) * 6)]!;
       } else if (sp === Species.Deer) {
         size = Z * 1.65 * grow;
         anchorX = 0.45;
@@ -462,8 +496,40 @@ export class WorldRenderer {
     this.weatherFx.draw(g, this.cam.vw, this.cam.vh, this.time);
     const d = WorldRenderer.darkness(w.dayFrac);
     if (d > 0) {
-      g.fillStyle = rgb(P.night, d * 0.38);
+      g.fillStyle = rgb(P.night, d * 0.55);
       g.fillRect(0, 0, this.cam.vw, this.cam.vh);
+      // moonlit vignette
+      const vg = g.createRadialGradient(this.cam.vw / 2, this.cam.vh / 2, Math.min(this.cam.vw, this.cam.vh) * 0.3, this.cam.vw / 2, this.cam.vh / 2, Math.max(this.cam.vw, this.cam.vh) * 0.75);
+      vg.addColorStop(0, 'rgba(10,16,40,0)');
+      vg.addColorStop(1, `rgba(10,16,40,${(0.35 * d).toFixed(3)})`);
+      g.fillStyle = vg;
+      g.fillRect(0, 0, this.cam.vw, this.cam.vh);
+      if (d > 0.45) this.drawEyes(d);
+    }
+  }
+
+  /** wolves' and foxes' eyes catch the moonlight */
+  private drawEyes(d: number): void {
+    const w = this.world!;
+    const a = w.agents;
+    const g = this.g;
+    const Z = this.cam.zoom;
+    g.fillStyle = `rgba(255,226,120,${Math.min(1, (d - 0.45) * 2).toFixed(2)})`;
+    for (let i = 0; i < a.hi; i++) {
+      if (!a.alive[i]) continue;
+      const sp = a.species[i];
+      if (sp !== Species.Wolf && sp !== Species.Fox) continue;
+      const st = a.state[i];
+      if (st === AState.Sleep || st === AState.Rest) continue;
+      const big = sp === Species.Wolf ? 1.45 : 1.05;
+      const dir = a.hx[i]! < 0 ? -1 : 1;
+      const [sx, sy] = this.cam.toScreen(a.x[i]! + dir * big * 0.28, a.y[i]! - big * 0.36);
+      if (sx < -10 || sy < -10 || sx > this.cam.vw + 10 || sy > this.cam.vh + 10) continue;
+      const r = Math.max(1.2, Z * 0.045);
+      g.beginPath();
+      g.arc(sx, sy, r, 0, Math.PI * 2);
+      g.arc(sx - dir * r * 2.6, sy, r, 0, Math.PI * 2);
+      g.fill();
     }
   }
 
@@ -482,9 +548,10 @@ export class WorldRenderer {
       g.fill();
       g.stroke();
       g.setLineDash([]);
-    } else if (ov.tool === 'rabbit' || ov.tool === 'wolf' || ov.tool === 'deer') {
-      const img = ov.tool === 'rabbit' ? this.sprites.rabbit[0]! : ov.tool === 'deer' ? this.sprites.deer[0]! : this.sprites.wolf[0]!;
-      const size = Z * (ov.tool === 'rabbit' ? 0.95 : ov.tool === 'deer' ? 1.65 : 1.45);
+    } else if (ov.tool === 'rabbit' || ov.tool === 'wolf' || ov.tool === 'deer' || ov.tool === 'fox' || ov.tool === 'bear') {
+      const S = this.sprites;
+      const img = { rabbit: S.rabbit[0]!, wolf: S.wolf[0]!, deer: S.deer[0]!, fox: S.fox[0]!, bear: S.bear[0]! }[ov.tool];
+      const size = Z * { rabbit: 0.95, wolf: 1.45, deer: 1.65, fox: 1.05, bear: 2.1 }[ov.tool];
       g.globalAlpha = 0.55;
       g.drawImage(img, sx - size * 0.45, sy - size * 0.78, size, size);
       g.globalAlpha = 1;

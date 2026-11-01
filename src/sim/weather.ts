@@ -36,7 +36,7 @@ export const WX_EFFECT: Record<number, WxEffect> = {
   [Wx.Storm]: { moisture: 0.009, vision: 0.6, thirst: 0.6, metabolism: 1.1, scent: 0.25, regrow: 1.15 },
   [Wx.Heat]: { moisture: -0.0085, vision: 1, thirst: 1.7, metabolism: 1.08, scent: 1, regrow: 0.6 },
   [Wx.Fog]: { moisture: -0.001, vision: 0.55, thirst: 0.9, metabolism: 1, scent: 1.2, regrow: 1 },
-  [Wx.Snow]: { moisture: 0.0006, vision: 0.8, thirst: 0.8, metabolism: 1.1, scent: 0.7, regrow: 0.2 },
+  [Wx.Snow]: { moisture: 0.0006, vision: 0.8, thirst: 0.8, metabolism: 1.1, scent: 0.7, regrow: 0.55 },
 };
 
 /**

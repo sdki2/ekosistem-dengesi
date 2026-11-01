@@ -32,7 +32,11 @@ export interface SpriteSet {
   wolfSize: number;
   /** deer frames: 0..5 walk, 6 rest */
   deer: Canvas[];
-  trees: Canvas[];
+  /** trees[kind][season]: oak, round oak, birch, pine, spruce, cherry × spring..winter */
+  trees: Canvas[][];
+  /** fox / bear frames: 0..5 walk, 6 rest */
+  fox: Canvas[];
+  bear: Canvas[];
   treeSize: number;
   bushes: Canvas[];
   bushSize: number;
@@ -322,31 +326,6 @@ function drawWolf(f: number): Canvas {
 
 // ───────────────────────── plants ─────────────────────────
 
-function drawTree(v: number): Canvas {
-  const S = 96;
-  const [c, g] = canvas(S, S);
-  // trunk
-  g.fillStyle = rgb(P.trunk);
-  g.beginPath();
-  g.roundRect(S * 0.45, S * 0.55, S * 0.1, S * 0.35, S * 0.03);
-  g.fill();
-  const blobs: [number, number, number][][] = [
-    [[0.5, 0.42, 0.26], [0.33, 0.5, 0.17], [0.67, 0.5, 0.17], [0.5, 0.26, 0.17]],
-    [[0.5, 0.4, 0.28], [0.3, 0.46, 0.15], [0.7, 0.44, 0.16]],
-    [[0.46, 0.44, 0.22], [0.62, 0.38, 0.2], [0.4, 0.3, 0.15], [0.66, 0.54, 0.13]],
-  ];
-  const base = [P.leaf, P.leafDark, P.leaf][v % 3]!;
-  for (const [x, y, r] of blobs[v % 3]!) {
-    const gr = g.createRadialGradient(S * (x - r * 0.3), S * (y - r * 0.4), S * r * 0.1, S * x, S * y, S * r);
-    gr.addColorStop(0, rgb(P.leafLight));
-    gr.addColorStop(1, rgb(base));
-    g.fillStyle = gr;
-    ellipse(g, S * x, S * y, S * r, S * r * 0.95);
-    g.fill();
-  }
-  return c;
-}
-
 function drawBush(v: number): Canvas {
   const S = 48;
   const [c, g] = canvas(S, S);
@@ -432,7 +411,9 @@ export function getSprites(): SpriteSet {
     wolf: Array.from({ length: 7 }, (_, f) => drawWolf(f)),
     wolfSize: 96,
     deer: Array.from({ length: 7 }, (_, f) => drawDeer(f)),
-    trees: [0, 1, 2].map(drawTree),
+    trees: Array.from({ length: TREE_KINDS }, (_, k) => [0, 1, 2, 3].map((s) => drawTreeKind(k, s))),
+    fox: Array.from({ length: 7 }, (_, f) => drawFox(f)),
+    bear: Array.from({ length: 7 }, (_, f) => drawBear(f)),
     treeSize: 96,
     bushes: [0, 1, 2, 3].map(drawBush),
     bushSize: 48,
@@ -441,4 +422,296 @@ export function getSprites(): SpriteSet {
     shadow: drawShadow(),
   };
   return cached;
+}
+
+// ───────────────────────── trees: six kinds × four seasons ─────────────────────────
+
+/** 0 oak, 1 round oak, 2 birch, 3 pine, 4 spruce, 5 cherry */
+export const TREE_KINDS = 6;
+
+function crown(g: CanvasRenderingContext2D, S: number, blobs: [number, number, number][], light: RGB, base: RGB): void {
+  for (const [x, y, r] of blobs) {
+    const gr = g.createRadialGradient(S * (x - r * 0.3), S * (y - r * 0.4), S * r * 0.1, S * x, S * y, S * r);
+    gr.addColorStop(0, rgb(light));
+    gr.addColorStop(1, rgb(base));
+    g.fillStyle = gr;
+    ellipse(g, S * x, S * y, S * r, S * r * 0.95);
+    g.fill();
+  }
+}
+
+function bareBranches(g: CanvasRenderingContext2D, S: number, col: string, top: number): void {
+  g.strokeStyle = col;
+  g.lineCap = 'round';
+  const branch = (x: number, y: number, ang: number, len: number, wdt: number, depth: number) => {
+    const x2 = x + Math.cos(ang) * len;
+    const y2 = y + Math.sin(ang) * len;
+    g.lineWidth = wdt;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x2, y2);
+    g.stroke();
+    if (depth > 0) {
+      branch(x2, y2, ang - 0.45, len * 0.7, wdt * 0.65, depth - 1);
+      branch(x2, y2, ang + 0.4, len * 0.68, wdt * 0.65, depth - 1);
+    }
+  };
+  branch(S * 0.5, S * 0.62, -Math.PI / 2, S * (0.62 - top) * 0.55, S * 0.05, 3);
+}
+
+function snowCaps(g: CanvasRenderingContext2D, S: number, spots: [number, number, number][]): void {
+  g.fillStyle = 'rgba(250,252,255,0.95)';
+  for (const [x, y, r] of spots) {
+    ellipse(g, S * x, S * y, S * r, S * r * 0.45);
+    g.fill();
+  }
+}
+
+function drawTreeKind(kind: number, season: number): Canvas {
+  const S = 96;
+  const [c, g] = canvas(S, S);
+  const winter = season === 3;
+  const autumn = season === 2;
+  const spring = season === 0;
+
+  if (kind === 3 || kind === 4) {
+    // conifers keep their needles all year
+    g.fillStyle = rgb(P.trunk);
+    g.fillRect(S * 0.46, S * 0.7, S * 0.08, S * 0.22);
+    const tall = kind === 4;
+    const tiers = tall ? 4 : 3;
+    const dark: RGB = tall ? [52, 98, 72] : [62, 116, 78];
+    const light: RGB = tall ? [88, 140, 104] : [104, 160, 108];
+    for (let t = 0; t < tiers; t++) {
+      const y0 = S * (tall ? 0.06 : 0.14) + t * S * (tall ? 0.16 : 0.18);
+      const half = S * (0.14 + t * (tall ? 0.06 : 0.08));
+      const gr = g.createLinearGradient(S * 0.5 - half, 0, S * 0.5 + half, 0);
+      gr.addColorStop(0, rgb(light));
+      gr.addColorStop(1, rgb(dark));
+      g.fillStyle = gr;
+      g.beginPath();
+      g.moveTo(S * 0.5, y0);
+      g.lineTo(S * 0.5 + half, y0 + S * (tall ? 0.24 : 0.26));
+      g.lineTo(S * 0.5 - half, y0 + S * (tall ? 0.24 : 0.26));
+      g.closePath();
+      g.fill();
+      if (winter) {
+        g.fillStyle = 'rgba(250,252,255,0.92)';
+        g.beginPath();
+        g.moveTo(S * 0.5, y0);
+        g.lineTo(S * 0.5 + half * 0.55, y0 + S * 0.12);
+        g.lineTo(S * 0.5 - half * 0.55, y0 + S * 0.12);
+        g.closePath();
+        g.fill();
+      }
+    }
+    return c;
+  }
+
+  // deciduous: trunk first
+  const birch = kind === 2;
+  g.fillStyle = birch ? '#efece4' : rgb(P.trunk);
+  g.beginPath();
+  g.roundRect(S * (birch ? 0.47 : 0.45), S * 0.5, S * (birch ? 0.06 : 0.1), S * 0.4, S * 0.03);
+  g.fill();
+  if (birch) {
+    g.fillStyle = '#3a3a3a';
+    for (const y of [0.56, 0.66, 0.74, 0.83]) g.fillRect(S * 0.47, S * y, S * 0.035, S * 0.012);
+  }
+
+  if (winter) {
+    bareBranches(g, S, birch ? '#e6e2d8' : '#7a5a3e', 0.18);
+    snowCaps(g, S, [[0.42, 0.34, 0.08], [0.58, 0.3, 0.07], [0.5, 0.22, 0.06]]);
+    return c;
+  }
+
+  const shapes: [number, number, number][][] = [
+    [[0.5, 0.42, 0.26], [0.33, 0.5, 0.17], [0.67, 0.5, 0.17], [0.5, 0.26, 0.17]],
+    [[0.5, 0.4, 0.28], [0.3, 0.46, 0.15], [0.7, 0.44, 0.16]],
+    [[0.5, 0.36, 0.17], [0.42, 0.24, 0.12], [0.58, 0.3, 0.12], [0.5, 0.48, 0.13]],
+    [],
+    [],
+    [[0.46, 0.44, 0.22], [0.62, 0.38, 0.2], [0.4, 0.3, 0.15], [0.66, 0.54, 0.13]],
+  ];
+  let base: RGB;
+  let light: RGB;
+  if (autumn) {
+    const autumnCols: [RGB, RGB][] = [[[214, 120, 52], [246, 186, 92]], [[196, 82, 54], [236, 146, 90]], [[226, 182, 62], [250, 224, 120]], [[0, 0, 0], [0, 0, 0]], [[0, 0, 0], [0, 0, 0]], [[200, 96, 70], [240, 160, 110]]];
+    [base, light] = autumnCols[kind]!;
+  } else if (birch) {
+    base = [118, 164, 82];
+    light = [176, 206, 120];
+  } else if (spring) {
+    base = [104, 172, 92];
+    light = [172, 220, 140];
+  } else {
+    base = kind === 1 ? P.leafDark : P.leaf;
+    light = P.leafLight;
+  }
+  crown(g, S, shapes[kind]!, light, base);
+  // cherry blossom in spring, berries/fruit in late summer
+  if (kind === 5 && spring) {
+    g.fillStyle = 'rgba(250,190,214,0.95)';
+    const r = mulberry(kind * 31 + 7);
+    for (let k = 0; k < 26; k++) {
+      ellipse(g, S * (0.3 + r() * 0.42), S * (0.22 + r() * 0.38), S * 0.025, S * 0.022);
+      g.fill();
+    }
+  } else if (kind === 5 && season === 1) {
+    g.fillStyle = '#c0392b';
+    const r = mulberry(kind * 17 + 3);
+    for (let k = 0; k < 10; k++) {
+      ellipse(g, S * (0.32 + r() * 0.38), S * (0.28 + r() * 0.32), S * 0.018, S * 0.018);
+      g.fill();
+    }
+  }
+  return c;
+}
+
+// ───────────────────────── fox ─────────────────────────
+
+export const FOX_FRAMES = 6;
+
+function drawFox(f: number): Canvas {
+  const S = 64;
+  const [c, g] = canvas(S, S);
+  const rest = f === 6;
+  const t = (f / FOX_FRAMES) * Math.PI * 2;
+  const by = S * (rest ? 0.66 : 0.56) - (rest ? 0 : Math.abs(Math.sin(t)) * S * 0.02);
+  const fur: RGB = [222, 120, 52];
+  const furDark: RGB = [176, 86, 34];
+  if (!rest) {
+    for (const [lx, s] of [[0.36, Math.sin(t)], [0.6, Math.sin(t + Math.PI)], [0.4, Math.sin(t + Math.PI)], [0.64, Math.sin(t)]] as const) {
+      g.save();
+      g.translate(S * lx, by + S * 0.05);
+      g.rotate(s * 0.45);
+      g.fillStyle = '#3b2a22';
+      g.fillRect(-S * 0.018, 0, S * 0.036, S * 0.18);
+      g.restore();
+    }
+  }
+  // brush tail with white tip
+  g.fillStyle = rgb(fur);
+  g.beginPath();
+  g.ellipse(S * 0.2, by - S * (rest ? 0.0 : 0.04), S * 0.17, S * 0.07, rest ? 0.2 : -0.35, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#fbf6ee';
+  g.beginPath();
+  g.ellipse(S * 0.07, by + S * (rest ? 0.02 : 0.02), S * 0.05, S * 0.04, -0.3, 0, Math.PI * 2);
+  g.fill();
+  // body
+  const grad = g.createLinearGradient(0, by - S * 0.08, 0, by + S * 0.1);
+  grad.addColorStop(0, rgb(shade(fur, 1.06)));
+  grad.addColorStop(1, rgb(furDark));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(S * 0.48, by, S * 0.2, S * 0.1, 0, 0, Math.PI * 2);
+  g.fill();
+  // head
+  const hx = S * 0.72;
+  const hy = by - S * (rest ? 0.04 : 0.08);
+  g.fillStyle = rgb(fur);
+  g.beginPath();
+  g.ellipse(hx, hy, S * 0.1, S * 0.08, 0, 0, Math.PI * 2);
+  g.fill();
+  g.beginPath();
+  g.moveTo(hx + S * 0.06, hy - S * 0.02);
+  g.lineTo(hx + S * 0.19, hy + S * 0.03);
+  g.lineTo(hx + S * 0.05, hy + S * 0.06);
+  g.closePath();
+  g.fill();
+  g.fillStyle = '#fbf6ee';
+  g.beginPath();
+  g.ellipse(hx + S * 0.07, hy + S * 0.045, S * 0.07, S * 0.025, 0.15, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#2b1d16';
+  g.beginPath();
+  g.arc(hx + S * 0.185, hy + S * 0.03, S * 0.015, 0, Math.PI * 2);
+  g.fill();
+  if (!rest) {
+    g.beginPath();
+    g.arc(hx + S * 0.04, hy - S * 0.015, S * 0.012, 0, Math.PI * 2);
+    g.fill();
+  }
+  // ears
+  g.fillStyle = rgb(furDark);
+  for (const ex of [-0.04, 0.03]) {
+    g.beginPath();
+    g.moveTo(hx + S * ex - S * 0.03, hy - S * 0.05);
+    g.lineTo(hx + S * ex, hy - S * 0.15);
+    g.lineTo(hx + S * ex + S * 0.03, hy - S * 0.05);
+    g.closePath();
+    g.fill();
+  }
+  return c;
+}
+
+// ───────────────────────── bear ─────────────────────────
+
+export const BEAR_FRAMES = 6;
+
+function drawBear(f: number): Canvas {
+  const S = 112;
+  const [c, g] = canvas(S, S);
+  const rest = f === 6;
+  const t = (f / BEAR_FRAMES) * Math.PI * 2;
+  const fur: RGB = [122, 84, 56];
+  const furDark: RGB = [86, 58, 40];
+  const by = S * (rest ? 0.64 : 0.52) - (rest ? 0 : Math.abs(Math.sin(t)) * S * 0.01);
+  if (!rest) {
+    for (const [lx, s, far] of [[0.3, Math.sin(t), true], [0.62, Math.sin(t + Math.PI), true], [0.34, Math.sin(t + Math.PI), false], [0.66, Math.sin(t), false]] as const) {
+      g.save();
+      g.translate(S * lx, by + S * 0.06);
+      g.rotate(s * 0.3);
+      g.fillStyle = rgb(far ? furDark : shade(fur, 0.9));
+      g.beginPath();
+      g.roundRect(-S * 0.045, 0, S * 0.09, S * 0.2, S * 0.03);
+      g.fill();
+      g.restore();
+    }
+  }
+  const grad = g.createRadialGradient(S * 0.45, by - S * 0.08, S * 0.04, S * 0.48, by, S * 0.3);
+  grad.addColorStop(0, rgb(shade(fur, 1.12)));
+  grad.addColorStop(1, rgb(furDark));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(S * 0.48, by, S * 0.28, S * (rest ? 0.13 : 0.16), 0, 0, Math.PI * 2);
+  g.fill();
+  // shoulder hump
+  g.beginPath();
+  g.ellipse(S * 0.6, by - S * 0.1, S * 0.12, S * 0.08, 0, 0, Math.PI * 2);
+  g.fill();
+  // head
+  const hx = S * (rest ? 0.76 : 0.78);
+  const hy = by - S * (rest ? 0.02 : 0.06);
+  g.fillStyle = rgb(fur);
+  g.beginPath();
+  g.ellipse(hx, hy, S * 0.11, S * 0.1, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = rgb([196, 160, 120]);
+  g.beginPath();
+  g.ellipse(hx + S * 0.08, hy + S * 0.025, S * 0.055, S * 0.045, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#21160f';
+  g.beginPath();
+  g.arc(hx + S * 0.125, hy + S * 0.015, S * 0.018, 0, Math.PI * 2);
+  g.fill();
+  if (!rest) {
+    g.beginPath();
+    g.arc(hx + S * 0.02, hy - S * 0.03, S * 0.012, 0, Math.PI * 2);
+    g.fill();
+  } else {
+    g.strokeStyle = '#21160f';
+    g.lineWidth = S * 0.008;
+    g.beginPath();
+    g.arc(hx + S * 0.02, hy - S * 0.03, S * 0.012, 0, Math.PI);
+    g.stroke();
+  }
+  g.fillStyle = rgb(furDark);
+  for (const ex of [-0.07, 0.03]) {
+    g.beginPath();
+    g.arc(hx + S * ex, hy - S * 0.085, S * 0.03, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
 }

@@ -121,3 +121,76 @@ describe('deer', () => {
     expect(w.extinct[2]).toBe(-1);
   });
 });
+
+describe('foxes, bears, seasons, night', () => {
+  const at = (w: World, day: number, frac: number) => {
+    w.tick = Math.floor((day + frac) * w.cfg.ticksPerDay);
+  };
+
+  it('bears hibernate through winter and barely use energy', () => {
+    const w = make({ map: 'forest', rabbits: 0, wolves: 0, bears: 2, seasons: true, weather: false });
+    at(w, w.cfg.seasons.lengthDays * 3 + 1, 0.4);
+    const e0 = w.counts[4]! ? w.agents.energy.slice() : null;
+    w.run(40);
+    const a = w.agents;
+    for (let i = 0; i < a.hi; i++) {
+      if (!a.alive[i] || a.species[i] !== Species.Bear) continue;
+      expect(a.state[i]).toBe(6); // Sleep
+      expect(e0![i]! - a.energy[i]!).toBeLessThan(w.cfg.bear.metabolism * 40 * 0.2);
+    }
+  });
+
+  it('foxes den up in bushes by day and hunt at night', () => {
+    const w = make({ map: 'forest', rabbits: 60, wolves: 0, foxes: 6, weather: false });
+    at(w, 2, 0.3);
+    w.run(15);
+    const a = w.agents;
+    let day = 0;
+    for (let i = 0; i < a.hi; i++) if (a.alive[i] && a.species[i] === Species.Fox && a.state[i] === 8) day++;
+    at(w, 3, 0.8);
+    let night = 0;
+    for (let k = 0; k < 4; k++) {
+      w.step();
+      for (let i = 0; i < a.hi; i++) if (a.alive[i] && a.species[i] === Species.Fox && (a.state[i] === 8 || a.state[i] === 0)) night++;
+    }
+    expect(night).toBeGreaterThan(day);
+  });
+
+  it('rabbits see less at night than wolves', async () => {
+    const { sight } = await import('../src/sim/behaviors');
+    const w = make({ weather: false });
+    at(w, 1, 0.85);
+    w.step();
+    expect(w.night).toBe(true);
+    expect(sight(w, Species.Rabbit)).toBeLessThan(sight(w, Species.Wolf));
+  });
+
+  it('plants hardly grow at night', () => {
+    const w = make({ rabbits: 0, wolves: 0, weather: false });
+    w.grid.plant.fill(10);
+    at(w, 1, 0.85);
+    w.step();
+    const night = w.grid.plant.reduce((s, p) => s + p, 0);
+    w.grid.plant.fill(10);
+    at(w, 2, 0.3);
+    w.step();
+    const day = w.grid.plant.reduce((s, p) => s + p, 0);
+    expect(day).toBeGreaterThan(night);
+  });
+
+  it('deer only breed in spring and summer when seasons are on', () => {
+    const w = make({ map: 'forest', rabbits: 0, wolves: 0, deer: 20, seasons: true, weather: false });
+    for (let i = 0; i < w.agents.hi; i++) {
+      w.agents.energy[i] = w.cfg.deer.maxEnergy;
+      w.agents.age[i] = w.cfg.deer.maturityDays * w.cfg.ticksPerDay * 2;
+      w.agents.cooldown[i] = 0;
+    }
+    at(w, w.cfg.seasons.lengthDays * 2 + 1, 0.3); // autumn
+    let births = 0;
+    for (let k = 0; k < 40; k++) {
+      w.step();
+      births += w.drainEvents().filter((e) => e.type === 'birth').length;
+    }
+    expect(births).toBe(0);
+  });
+});

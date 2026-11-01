@@ -6,7 +6,7 @@ import { meanCv } from '../sim/stats';
 import { World, type SimEvent, type WorldSnapshot } from '../sim/world';
 
 export type Mode = 'scenario' | 'sandbox';
-export type Tool = 'plant' | 'rabbit' | 'wolf' | 'deer' | 'inspect' | 'remove';
+export type Tool = 'plant' | 'rabbit' | 'wolf' | 'deer' | 'fox' | 'bear' | 'inspect' | 'remove';
 export type Status = 'playing' | 'won' | 'lost';
 
 export interface SessionOptions {
@@ -18,6 +18,8 @@ export interface SessionOptions {
   weather?: boolean;
   /** starting deer herd (sandbox only) */
   deer?: number;
+  foxes?: number;
+  bears?: number;
   randomEvents?: boolean;
   cfg?: SimConfig;
 }
@@ -64,7 +66,9 @@ export class Session {
       cfg: opts.cfg ?? cloneConfig(),
       rabbits: L ? L.rabbits : 60,
       wolves: L ? L.wolves : 6,
-      deer: L ? 0 : opts.deer ?? 0,
+      deer: L ? L.deer ?? 0 : opts.deer ?? 0,
+      foxes: L ? L.foxes ?? 0 : opts.foxes ?? 0,
+      bears: L ? L.bears ?? 0 : opts.bears ?? 0,
       initialPlant: L?.initialPlant,
       seasons: L ? L.seasons : !!opts.seasons,
       weather: L ? L.weather : !!opts.weather,
@@ -203,9 +207,9 @@ export class Session {
 
   apply(tool: Tool, x: number, y: number, brush: number): PlaceResult {
     const w = this.world;
-    if (tool === 'rabbit' || tool === 'wolf' || tool === 'deer') {
-      const sp = tool === 'rabbit' ? Species.Rabbit : tool === 'wolf' ? Species.Wolf : Species.Deer;
-      const cost = tool === 'rabbit' ? ECONOMY.rabbitCost : tool === 'wolf' ? ECONOMY.wolfCost : ECONOMY.deerCost;
+    if (tool === 'rabbit' || tool === 'wolf' || tool === 'deer' || tool === 'fox' || tool === 'bear') {
+      const sp = { rabbit: Species.Rabbit, wolf: Species.Wolf, deer: Species.Deer, fox: Species.Fox, bear: Species.Bear }[tool];
+      const cost = { rabbit: ECONOMY.rabbitCost, wolf: ECONOMY.wolfCost, deer: ECONOMY.deerCost, fox: ECONOMY.foxCost, bear: ECONOMY.bearCost }[tool];
       if (!w.grid.walkableAt(x, y)) return { ok: false, count: 0, reason: 'blocked' };
       if (w.totalAnimals() >= w.cfg.maxAnimals) return { ok: false, count: 0, reason: 'cap' };
       if (!this.canAfford(cost)) return { ok: false, count: 0, reason: 'budget' };

@@ -2,6 +2,42 @@ import { AState, Species } from './agents';
 import { DX8, DY8 } from './grid';
 import type { World } from './world';
 
+// ───────────────────────── senses / seasons ─────────────────────────
+
+/** night owls (wolves, foxes) see fine in the dark; day animals barely do */
+export function sight(w: World, sp: Species): number {
+  if (!w.night) return w.visionMul;
+  const nocturnal = sp === Species.Wolf || sp === Species.Fox;
+  return w.visionMul * (nocturnal ? 1.05 : w.cfg.time.nightVisionDiurnal);
+}
+
+/** nearest animal that hunts sp within r (wolves and bears for all; foxes for rabbits) */
+function nearestThreat(w: World, sp: Species, x: number, y: number, r: number): number {
+  const a = w.agents;
+  let best = w.counts[Species.Wolf]! > 0 ? w.wolfHash.nearest(a, x, y, r) : -1;
+  let bd = best >= 0 ? Math.hypot(a.x[best]! - x, a.y[best]! - y) : Infinity;
+  const consider = (j: number) => {
+    if (j < 0) return;
+    const d = Math.hypot(a.x[j]! - x, a.y[j]! - y);
+    if (d < bd) {
+      bd = d;
+      best = j;
+    }
+  };
+  if (w.counts[Species.Bear]! > 0) consider(w.bearHash.nearest(a, x, y, Math.min(r, 4), -1, (j) => a.state[j] !== AState.Sleep));
+  if (sp === Species.Rabbit && w.counts[Species.Fox]! > 0) consider(w.foxHash.nearest(a, x, y, r, -1, (j) => a.state[j] === AState.Hunt || a.state[j] === AState.Wander));
+  return best;
+}
+
+/** with seasons on, animals only breed in their season */
+function inBreedingSeason(w: World, sp: Species): boolean {
+  if (!w.seasonsEnabled) return true;
+  const s = w.season();
+  if (sp === Species.Rabbit) return true;
+  if (sp === Species.Wolf) return s !== 3;
+  return s === 0 || s === 1;
+}
+
 // ───────────────────────── movement helpers ─────────────────────────
 
 /** move agent i along (dx, dy) by `speed` tiles, sliding along obstacles */
@@ -90,13 +126,18 @@ function reproduce(w: World, i: number, species: Species): void {
     return;
   }
   if (a.age[i]! < sc.maturityDays * tpd || a.energy[i]! < sc.reproThreshold) return;
+  if (!inBreedingSeason(w, species)) return;
   if (species === Species.Rabbit) {
     const near = w.rabbitHash.countNear(a, a.x[i]!, a.y[i]!, w.cfg.rabbit.crowdRadius, i);
     if (near >= w.cfg.rabbit.crowdMax) return;
   } else if (species === Species.Wolf) {
     const others = w.wolfHash.countNear(a, a.x[i]!, a.y[i]!, w.cfg.wolf.territoryRadius, i);
     if (others >= w.cfg.wolf.territoryMax) return;
-  } else if (w.deerHash.countNear(a, a.x[i]!, a.y[i]!, 4, i) >= 3) return;
+  } else if (species === Species.Deer) {
+    if (w.deerHash.countNear(a, a.x[i]!, a.y[i]!, 4, i) >= 3) return;
+  } else if (species === Species.Fox) {
+    if (w.foxHash.countNear(a, a.x[i]!, a.y[i]!, w.cfg.fox.territoryRadius, i) >= w.cfg.fox.territoryMax) return;
+  } else if (w.bearHash.countNear(a, a.x[i]!, a.y[i]!, 16, i) >= 1) return;
   const litter = w.rng.int(sc.litterMin, sc.litterMax);
   for (let k = 0; k < litter; k++) {
     if (a.energy[i]! - sc.birthEnergy - sc.birthCost < sc.maxEnergy * 0.15) break;
@@ -123,11 +164,12 @@ export function updateRabbit(w: World, i: number): void {
     if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
   }
 
-  let metab = r.metabolism * w.metabolismMul;
+  const winter = w.seasonsEnabled && w.season() === 3;
+  let metab = r.metabolism * w.metabolismMul * (winter ? r.winterMetabolismMul / 1.1 : 1);
   let fleeing = false;
 
   // threat detection
-  const wolf = w.wolfHash.nearest(a, x, y, r.vision * w.visionMul);
+  const wolf = nearestThreat(w, Species.Rabbit, x, y, r.vision * sight(w, Species.Rabbit));
   const hiddenHere = g.isCover(x, y);
   if (wolf >= 0) {
     const wx = a.x[wolf]!;
@@ -216,7 +258,11 @@ export function updateRabbit(w: World, i: number): void {
           passingThrough = g.plant[g.idx(ttx, tty)]! >= r.giveUp;
         }
       }
-      if (!moveOn && !passingThrough && p >= w.cfg.plant.minEdible) {
+      if (winter && p < w.cfg.plant.minEdible * 2 && g.isCover(x, y)) {
+        // winter fare: bark and twigs
+        a.state[i] = AState.Eat;
+        a.energy[i] = Math.min(r.maxEnergy, e + r.winterBrowse);
+      } else if (!moveOn && !passingThrough && p >= w.cfg.plant.minEdible) {
         a.state[i] = AState.Eat;
         const bite = Math.min(p, w.cfg.plant.biteSize * (w.twilight ? w.cfg.time.rabbitTwilightBiteMul : 1));
         g.plant[ti] = p - bite;
@@ -289,8 +335,13 @@ export function updateWolf(w: World, i: number): void {
   }
 
   let metab = wc.metabolism * w.metabolismMul;
+  const bear = w.counts[Species.Bear]! > 0 ? w.bearHash.nearest(a, x, y, 2.2, -1, (j) => a.state[j] !== AState.Sleep) : -1;
 
-  if (a.rest[i]! > 0) {
+  if (bear >= 0) {
+    // nobody argues with a bear
+    a.state[i] = AState.Flee;
+    moveDir(w, i, x - a.x[bear]!, y - a.y[bear]!, wc.runSpeed);
+  } else if (a.rest[i]! > 0) {
     // handling time after a kill: eating and resting
     a.rest[i]!--;
     a.state[i] = AState.Rest;
@@ -306,10 +357,10 @@ export function updateWolf(w: World, i: number): void {
     let prey = -1;
     if (hungry) {
       const cd2 = wc.coverDetect * wc.coverDetect;
-      prey = w.rabbitHash.nearest(a, x, y, wc.vision * w.visionMul, -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!) || w.rng.chance(wc.scentChance * w.scentMul));
+      prey = w.rabbitHash.nearest(a, x, y, wc.vision * sight(w, Species.Wolf), -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!) || w.rng.chance(wc.scentChance * w.scentMul * (w.seasonsEnabled && w.season() === 3 ? wc.winterTrackMul : 1)));
     }
     if (prey < 0 && hungry && w.counts[2]! > 0) {
-      prey = w.deerHash.nearest(a, x, y, wc.vision * w.visionMul);
+      prey = w.deerHash.nearest(a, x, y, wc.vision * sight(w, Species.Wolf));
     }
     if (prey >= 0) {
       const isDeer = a.species[prey] === Species.Deer;
@@ -401,8 +452,8 @@ export function updateDeer(w: World, i: number): void {
 
   let metab = d.metabolism * w.metabolismMul;
   let fleeing = false;
-  const wolf = w.wolfHash.nearest(a, x, y, d.vision * w.visionMul);
-  // only run from wolves that are actually hunting or already close, so deer can still graze
+  const wolf = nearestThreat(w, Species.Deer, x, y, d.vision * sight(w, Species.Deer));
+  // only run from hunters that are actually hunting or already close, so deer can still graze
   if (wolf >= 0 && (a.state[wolf] === AState.Hunt || Math.hypot(a.x[wolf]! - x, a.y[wolf]! - y) < 2.2)) {
     fleeing = true;
     a.state[i] = AState.Flee;
@@ -475,4 +526,199 @@ export function updateDeer(w: World, i: number): void {
   a.energy[i]! -= metab;
   if (a.energy[i]! <= 0) return w.kill(i, 'starved');
   if (!fleeing) reproduce(w, i, Species.Deer);
+}
+
+// ───────────────────────── fox ─────────────────────────
+
+/** nocturnal, solitary rabbit hunter: dens up in bushes by day, avoids wolves and bears */
+export function updateFox(w: World, i: number): void {
+  const a = w.agents;
+  const f = w.cfg.fox;
+  const g = w.grid;
+  const x = a.x[i]!;
+  const y = a.y[i]!;
+
+  a.age[i]!++;
+  if (a.age[i]! > a.maxAge[i]!) return w.kill(i, 'old');
+  if (g.hasWater) {
+    a.thirst[i]! += f.thirstPerTick * w.thirstMul;
+    if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
+  }
+  let metab = f.metabolism * w.metabolismMul;
+  const e = a.energy[i]!;
+  const active = w.night || w.twilight || e < f.maxEnergy * 0.25;
+  const big = nearestThreat(w, Species.Fox, x, y, 3);
+
+  if (big >= 0) {
+    a.state[i] = AState.Flee;
+    moveDir(w, i, x - a.x[big]!, y - a.y[big]!, f.runSpeed);
+  } else if (a.rest[i]! > 0) {
+    a.rest[i]!--;
+    a.state[i] = AState.Rest;
+    metab *= f.restMetabolismMul;
+  } else if (g.hasWater && a.thirst[i]! > f.thirstSeek) {
+    a.state[i] = AState.SeekWater;
+    if (seekWater(w, i, f.walkSpeed)) {
+      a.state[i] = AState.Drink;
+      a.thirst[i] = Math.max(0, a.thirst[i]! - 25);
+    }
+  } else if (active && !w.sheltering && e < f.maxEnergy * (w.night ? 0.95 : f.huntBelow)) {
+    const cd2 = f.coverDetect * f.coverDetect;
+    const prey = w.rabbitHash.nearest(a, x, y, f.vision * sight(w, Species.Fox), -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!));
+    if (prey >= 0) {
+      a.state[i] = AState.Hunt;
+      const d = moveTo(w, i, a.x[prey]!, a.y[prey]!, f.runSpeed);
+      metab += 0.1;
+      if (d - f.runSpeed <= f.catchDist && w.rng.chance(f.catchChance)) {
+        const px = a.x[prey]!;
+        const py = a.y[prey]!;
+        w.kill(prey, 'eaten');
+        a.energy[i] = Math.min(f.maxEnergy, a.energy[i]! + f.preyEnergy);
+        a.rest[i] = f.handlingTicks;
+        w.emit({ type: 'catch', x: px, y: py });
+      }
+    } else {
+      a.state[i] = AState.Wander;
+      wander(w, i, f.walkSpeed);
+      // mice, voles and beetles in the grass
+      if (g.plant[g.idx(Math.floor(x), Math.floor(y))]! > 15 && w.rng.chance(f.mouseChance)) {
+        a.energy[i] = Math.min(f.maxEnergy, a.energy[i]! + f.mouseEnergy);
+        a.state[i] = AState.Eat;
+      }
+    }
+  } else if (!active) {
+    // daytime: curl up in a bush den
+    if (g.isCover(x, y)) {
+      a.state[i] = AState.Sleep;
+      metab *= f.restMetabolismMul;
+    } else {
+      a.state[i] = AState.Wander;
+      let bx = -1;
+      let by = -1;
+      for (let k = 0; k < 10 && bx < 0; k++) {
+        const sx = Math.floor(x + w.rng.range(-5, 5));
+        const sy = Math.floor(y + w.rng.range(-5, 5));
+        if (g.inBounds(sx, sy) && g.isCover(sx, sy)) {
+          bx = sx + 0.5;
+          by = sy + 0.5;
+        }
+      }
+      if (bx >= 0) moveTo(w, i, bx, by, f.walkSpeed);
+      else wander(w, i, f.walkSpeed * 0.6);
+    }
+  } else {
+    a.state[i] = AState.Wander;
+    wander(w, i, f.walkSpeed * 0.7);
+  }
+
+  a.energy[i]! -= metab;
+  if (a.energy[i]! <= 0) return w.kill(i, 'starved');
+  reproduce(w, i, Species.Fox);
+}
+
+// ───────────────────────── bear ─────────────────────────
+
+/** apex omnivore: berries, grass, fish at the water's edge, the odd rabbit or deer; sleeps through winter */
+export function updateBear(w: World, i: number): void {
+  const a = w.agents;
+  const b = w.cfg.bear;
+  const g = w.grid;
+  const x = a.x[i]!;
+  const y = a.y[i]!;
+
+  a.age[i]!++;
+  if (a.age[i]! > a.maxAge[i]!) return w.kill(i, 'old');
+
+  // hibernation: the whole winter asleep on fat reserves
+  if (w.seasonsEnabled && w.season() === 3) {
+    a.state[i] = AState.Sleep;
+    a.thirst[i] = 0;
+    a.energy[i]! -= b.metabolism * b.hibernateMul;
+    if (a.energy[i]! <= 0) return w.kill(i, 'starved');
+    return;
+  }
+  if (g.hasWater) {
+    a.thirst[i]! += b.thirstPerTick * w.thirstMul;
+    if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
+  }
+  let metab = b.metabolism * w.metabolismMul;
+  const e = a.energy[i]!;
+  // autumn: eat everything in sight before the long sleep
+  const full = w.seasonsEnabled && w.season() === 2 ? b.maxEnergy : b.fullEnergy;
+
+  if (a.rest[i]! > 0) {
+    a.rest[i]!--;
+    a.state[i] = AState.Rest;
+    metab *= b.restMetabolismMul;
+  } else if ((w.night || w.sheltering) && e > b.maxEnergy * 0.3) {
+    a.state[i] = AState.Sleep;
+    metab *= b.restMetabolismMul;
+  } else if (g.hasWater && a.thirst[i]! > b.thirstSeek) {
+    a.state[i] = AState.SeekWater;
+    if (seekWater(w, i, b.walkSpeed)) {
+      a.state[i] = AState.Drink;
+      a.thirst[i] = Math.max(0, a.thirst[i]! - 30);
+    }
+  } else if (e < full) {
+    const ti = g.idx(Math.floor(x), Math.floor(y));
+    const p = g.plant[ti]!;
+    let prey = -1;
+    if (e < b.maxEnergy * 0.5) {
+      if (w.counts[Species.Deer]! > 0) prey = w.deerHash.nearest(a, x, y, 1.1);
+      if (prey < 0) prey = w.rabbitHash.nearest(a, x, y, 1.1);
+    }
+    if (prey >= 0 && w.rng.chance(b.attackChance)) {
+      const isDeer = a.species[prey] === Species.Deer;
+      const px = a.x[prey]!;
+      const py = a.y[prey]!;
+      w.kill(prey, 'eaten');
+      a.energy[i] = Math.min(b.maxEnergy, e + (isDeer ? b.deerEnergy : b.rabbitEnergy));
+      a.rest[i] = 10;
+      w.emit({ type: 'catch', x: px, y: py });
+    } else if (g.waterDist[ti]! <= 1 && w.rng.chance(b.fishChance)) {
+      a.state[i] = AState.Eat;
+      a.energy[i] = Math.min(b.maxEnergy, e + b.fishEnergy);
+      w.emit({ type: 'eat', x, y });
+    } else if (g.isCover(x, y) && p >= w.cfg.plant.minEdible) {
+      a.state[i] = AState.Eat;
+      const bite = Math.min(p, b.biteSize);
+      g.plant[ti] = p - bite;
+      a.energy[i] = Math.min(b.maxEnergy, e + bite * b.berryEnergy);
+    } else if (p >= 30) {
+      a.state[i] = AState.Eat;
+      const bite = Math.min(p - 20, b.biteSize);
+      g.plant[ti] = p - bite;
+      a.energy[i] = Math.min(b.maxEnergy, e + bite * b.grassEnergy);
+    } else {
+      a.state[i] = AState.SeekFood;
+      if (Math.hypot(a.tx[i]! - x, a.ty[i]! - y) < 0.5) {
+        let best = -1;
+        let bx = x + a.hx[i]! * 6;
+        let by = y + a.hy[i]! * 6;
+        for (let k = 0; k < 10; k++) {
+          const sx = Math.floor(x + w.rng.range(-7, 7));
+          const sy = Math.floor(y + w.rng.range(-7, 7));
+          if (!g.walkable(sx, sy)) continue;
+          const j = g.idx(sx, sy);
+          // berries first, then the riverbank for fish, then lush grass
+          const score = (g.isCover(sx, sy) ? g.plant[j]! + 50 : g.plant[j]! * 0.5) + (g.waterDist[j]! <= 1 ? 35 : 0);
+          if (score > best) {
+            best = score;
+            bx = sx + 0.5;
+            by = sy + 0.5;
+          }
+        }
+        a.tx[i] = Math.min(g.w - 0.5, Math.max(0.5, bx));
+        a.ty[i] = Math.min(g.h - 0.5, Math.max(0.5, by));
+      }
+      moveTo(w, i, a.tx[i]!, a.ty[i]!, b.walkSpeed);
+    }
+  } else {
+    a.state[i] = AState.Wander;
+    wander(w, i, b.walkSpeed * 0.6);
+  }
+
+  a.energy[i]! -= metab;
+  if (a.energy[i]! <= 0) return w.kill(i, 'starved');
+  reproduce(w, i, Species.Bear);
 }

@@ -1,6 +1,6 @@
 import { cloneConfig, type SimConfig } from '../config';
 import { AgentStore, AState, Species, type AgentSnapshot, type DeathCause } from './agents';
-import { updateDeer, updateRabbit, updateWolf } from './behaviors';
+import { updateBear, updateDeer, updateFox, updateRabbit, updateWolf } from './behaviors';
 import { Grid, Tile, type MapKind } from './grid';
 import { generateMap } from './mapgen';
 import { Rng } from './rng';
@@ -45,6 +45,8 @@ export interface WorldOptions {
   wolves: number;
   /** optional deer herd */
   deer?: number;
+  foxes?: number;
+  bears?: number;
   /** initial plant range per tile, % */
   initialPlant?: [number, number];
   seasons?: boolean;
@@ -90,6 +92,8 @@ export class World {
   readonly rabbitHash: SpatialHash;
   readonly wolfHash: SpatialHash;
   readonly deerHash: SpatialHash;
+  readonly foxHash: SpatialHash;
+  readonly bearHash: SpatialHash;
   tick = 0;
   seasonsEnabled: boolean;
   randomEvents: boolean;
@@ -97,10 +101,10 @@ export class World {
   activeEvent: ActiveEvent | null = null;
   lastEventDay = -1000;
   /** day each species went extinct (-1 = alive) */
-  extinct: number[] = [-1, -1, -1];
+  extinct: number[] = [-1, -1, -1, -1, -1];
   /** species that existed at some point (extinction only counts after presence) */
-  everPresent: boolean[] = [false, false, false];
-  counts: number[] = [0, 0, 0];
+  everPresent: boolean[] = [false, false, false, false, false];
+  counts: number[] = [0, 0, 0, 0, 0];
   history = new History();
   today: DayCounters = newDayCounters();
   /** sample the time series every N ticks */
@@ -136,6 +140,8 @@ export class World {
     this.rabbitHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
     this.wolfHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
     this.deerHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
+    this.foxHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
+    this.bearHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
     this.seasonsEnabled = !!opts.seasons;
     this.weatherEnabled = !!opts.weather;
     this.wx = new WeatherState(opts.seed, this.cfg.weather.moistureStart);
@@ -159,6 +165,14 @@ export class World {
     for (let k = 0; k < (opts.deer ?? 0); k++) {
       const p = this.randomWalkable();
       this.spawnAnimal(Species.Deer, p[0], p[1], true);
+    }
+    for (let k = 0; k < (opts.foxes ?? 0); k++) {
+      const p = this.randomWalkable();
+      this.spawnAnimal(Species.Fox, p[0], p[1], true);
+    }
+    for (let k = 0; k < (opts.bears ?? 0); k++) {
+      const p = this.randomWalkable();
+      this.spawnAnimal(Species.Bear, p[0], p[1], true);
     }
     this.sample();
   }
@@ -213,11 +227,14 @@ export class World {
   }
 
   totalAnimals(): number {
-    return this.counts[0] + this.counts[1] + this.counts[2]!;
+    let n = 0;
+    for (const c of this.counts) n += c;
+    return n;
   }
 
-  speciesCfg(sp: Species): SimConfig['rabbit'] | SimConfig['wolf'] | SimConfig['deer'] {
-    return sp === Species.Rabbit ? this.cfg.rabbit : sp === Species.Wolf ? this.cfg.wolf : this.cfg.deer;
+  speciesCfg(sp: Species): SimConfig['rabbit'] | SimConfig['wolf'] | SimConfig['deer'] | SimConfig['fox'] | SimConfig['bear'] {
+    const c = this.cfg;
+    return sp === Species.Rabbit ? c.rabbit : sp === Species.Wolf ? c.wolf : sp === Species.Deer ? c.deer : sp === Species.Fox ? c.fox : c.bear;
   }
 
   /**
@@ -262,7 +279,7 @@ export class World {
     if (!a.alive[i]) return;
     const sp = a.species[i] as Species;
     this.counts[sp]--;
-    if (sp !== Species.Deer) (sp === Species.Rabbit ? this.today.rabbitDeaths : this.today.wolfDeaths)[cause]++;
+    if (sp <= Species.Wolf) (sp === Species.Rabbit ? this.today.rabbitDeaths : this.today.wolfDeaths)[cause]++;
     this.emit({ type: 'death', species: sp, cause, x: a.x[i]!, y: a.y[i]! });
     a.release(i);
   }
@@ -293,6 +310,8 @@ export class World {
     this.rabbitHash.build(a, Species.Rabbit);
     this.wolfHash.build(a, Species.Wolf);
     if (this.counts[2]! > 0) this.deerHash.build(a, Species.Deer);
+    if (this.counts[3]! > 0) this.foxHash.build(a, Species.Fox);
+    if (this.counts[4]! > 0) this.bearHash.build(a, Species.Bear);
 
     this.night = this.dayFrac >= 1 - cfg.nightFraction;
     this.metabolismMul = this.activeEvent?.kind === 'winter' ? cfg.events.winterMetabolismMul : 1;
@@ -326,7 +345,9 @@ export class World {
       const sp = a.species[i];
       if (sp === Species.Rabbit) updateRabbit(this, i);
       else if (sp === Species.Wolf) updateWolf(this, i);
-      else updateDeer(this, i);
+      else if (sp === Species.Deer) updateDeer(this, i);
+      else if (sp === Species.Fox) updateFox(this, i);
+      else updateBear(this, i);
     }
 
     // births
@@ -428,7 +449,10 @@ export class World {
   private regrowPlants(): void {
     const g = this.grid;
     const { rate, bareMul, minEdible } = this.cfg.plant;
-    const m = this.regrowMultiplier();
+    const nf = this.cfg.nightFraction;
+    const ng = this.cfg.plant.nightGrowth;
+    // photosynthesis: almost nothing grows at night, days make up for it
+    const m = this.regrowMultiplier() * (this.night ? ng : (1 - ng * nf) / (1 - nf));
     const plant = g.plant;
     const gm = g.growMul;
     for (let i = 0; i < plant.length; i++) {
@@ -471,6 +495,8 @@ export class World {
     h.rabbits.push(this.counts[0]);
     h.wolves.push(this.counts[1]);
     h.deer.push(this.counts[2]!);
+    h.foxes.push(this.counts[3]!);
+    h.bears.push(this.counts[4]!);
     h.shannon.push(this.diversity());
   }
 
@@ -482,6 +508,8 @@ export class World {
       rabbits: this.counts[0],
       wolves: this.counts[1],
       deer: this.counts[2]!,
+      foxes: this.counts[3]!,
+      bears: this.counts[4]!,
       rabbitBirths: this.today.rabbitBirths,
       wolfBirths: this.today.wolfBirths,
       rabbitDeaths: this.today.rabbitDeaths,
@@ -649,9 +677,9 @@ export class World {
     this.everPresent = s.everPresent.slice();
     this.today = JSON.parse(JSON.stringify(s.today)) as DayCounters;
     const h = this.history;
-    h.t.length = h.plants.length = h.rabbits.length = h.wolves.length = h.deer.length = h.shannon.length = s.historyLen;
+    h.t.length = h.plants.length = h.rabbits.length = h.wolves.length = h.deer.length = h.foxes.length = h.bears.length = h.shannon.length = s.historyLen;
     h.days.length = s.daysLen;
-    this.counts = [0, 0, 0];
+    this.counts = [0, 0, 0, 0, 0];
     const a = this.agents;
     for (let i = 0; i < a.hi; i++) if (a.alive[i]) this.counts[a.species[i] as Species]++;
     this.events = [];
@@ -669,6 +697,8 @@ export class World {
     mix(this.counts[0]);
     mix(this.counts[1]);
     mix(this.counts[2]!);
+    mix(this.counts[3]!);
+    mix(this.counts[4]!);
     const a = this.agents;
     for (let i = 0; i < a.hi; i++) {
       if (!a.alive[i]) continue;
