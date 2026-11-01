@@ -137,6 +137,17 @@ export interface SimConfig {
     regrow: [number, number, number, number];
   };
 
+  weather: {
+    /** a weather spell lasts this many ticks (min..max) */
+    minTicks: number;
+    maxTicks: number;
+    /** soil moisture 0–1 at start */
+    moistureStart: number;
+    /** regrowth multiplier = moistureBase + moistureGain * moisture */
+    moistureBase: number;
+    moistureGain: number;
+  };
+
   events: {
     /** chance per day of a random event (when none is active) */
     dailyChance: number;
@@ -232,6 +243,14 @@ export const DEFAULT_CONFIG: SimConfig = {
   seasons: {
     lengthDays: 15,
     regrow: [1.5, 1.0, 0.6, 0.25],
+  },
+
+  weather: {
+    minTicks: 12,
+    maxTicks: 40,
+    moistureStart: 0.6,
+    moistureBase: 0.5,
+    moistureGain: 1,
   },
 
   events: {

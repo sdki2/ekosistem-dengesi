@@ -5,6 +5,7 @@ import { Grid, type MapKind } from './grid';
 import { generateMap } from './mapgen';
 import { Rng } from './rng';
 import { SpatialHash } from './spatialHash';
+import { WeatherState, Wx } from './weather';
 import { History, emptyDeaths, shannon, TILES_PER_PLANT_PATCH, type DayLog } from './stats';
 
 export type EventKind = 'drought' | 'disease' | 'winter';
@@ -31,6 +32,7 @@ export type SimEvent =
   | { type: 'extinct'; species: Species; day: number }
   | { type: 'eventStart'; kind: EventKind; species?: Species; killed?: number }
   | { type: 'eventEnd'; kind: EventKind }
+  | { type: 'weather'; kind: Wx }
   | { type: 'newDay'; day: number };
 
 export interface WorldOptions {
@@ -42,6 +44,7 @@ export interface WorldOptions {
   /** initial plant range per tile, % */
   initialPlant?: [number, number];
   seasons?: boolean;
+  weather?: boolean;
   randomEvents?: boolean;
   scheduledEvents?: ScheduledEvent[];
 }
@@ -52,6 +55,7 @@ export interface WorldSnapshot {
   plant: Float32Array;
   agents: AgentSnapshot;
   activeEvent: ActiveEvent | null;
+  weather: { kind: Wx; until: number; moisture: number; rng: number };
   lastEventDay: number;
   extinct: [number, number];
   everPresent: [boolean, boolean];
@@ -104,6 +108,12 @@ export class World {
   // per-tick environment (read by behaviors)
   night = false;
   metabolismMul = 1;
+  visionMul = 1;
+  thirstMul = 1;
+  scentMul = 1;
+
+  weatherEnabled: boolean;
+  readonly wx: WeatherState;
 
   constructor(opts: WorldOptions) {
     this.cfg = opts.cfg ? cloneConfig(opts.cfg) : cloneConfig();
@@ -115,6 +125,8 @@ export class World {
     this.rabbitHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
     this.wolfHash = new SpatialHash(this.cfg.width, this.cfg.height, 4);
     this.seasonsEnabled = !!opts.seasons;
+    this.weatherEnabled = !!opts.weather;
+    this.wx = new WeatherState(opts.seed, this.cfg.weather.moistureStart);
     this.randomEvents = !!opts.randomEvents;
     this.scheduled = (opts.scheduledEvents ?? []).slice().sort((a, b) => a.day - b.day);
 
@@ -158,6 +170,7 @@ export class World {
     const e = this.activeEvent;
     if (e?.kind === 'drought') m *= this.cfg.events.droughtRegrowMul;
     if (e?.kind === 'winter') m *= this.cfg.events.winterRegrowMul;
+    if (this.weatherEnabled) m *= this.cfg.weather.moistureBase + this.cfg.weather.moistureGain * this.wx.moisture;
     return m;
   }
 
@@ -263,6 +276,18 @@ export class World {
     this.night = this.dayFrac >= 1 - cfg.nightFraction;
     this.metabolismMul = this.activeEvent?.kind === 'winter' ? cfg.events.winterMetabolismMul : 1;
     if (this.season() === 3) this.metabolismMul *= 1.1;
+    if (this.weatherEnabled) {
+      const ev = this.activeEvent?.kind;
+      const changed = this.wx.step(this.tick, this.season(), cfg.weather.minTicks, cfg.weather.maxTicks, ev === 'drought' || ev === 'winter' ? ev : null);
+      if (changed !== null) this.emit({ type: 'weather', kind: changed });
+      const fx = this.wx.effect;
+      this.metabolismMul *= fx.metabolism;
+      this.visionMul = fx.vision;
+      this.thirstMul = fx.thirst;
+      this.scentMul = fx.scent;
+    } else {
+      this.visionMul = this.thirstMul = this.scentMul = 1;
+    }
 
     this.regrowPlants();
 
@@ -485,6 +510,7 @@ export class World {
       plant: this.grid.plant.slice(),
       agents: this.agents.serialize(),
       activeEvent: this.activeEvent ? { ...this.activeEvent } : null,
+      weather: { kind: this.wx.kind, until: this.wx.until, moisture: this.wx.moisture, rng: this.wx.rng.state },
       lastEventDay: this.lastEventDay,
       extinct: [this.extinct[0], this.extinct[1]],
       everPresent: [this.everPresent[0], this.everPresent[1]],
@@ -501,6 +527,10 @@ export class World {
     this.agents = AgentStore.deserialize(s.agents);
     this.activeEvent = s.activeEvent ? { ...s.activeEvent } : null;
     this.lastEventDay = s.lastEventDay;
+    this.wx.kind = s.weather.kind;
+    this.wx.until = s.weather.until;
+    this.wx.moisture = s.weather.moisture;
+    this.wx.rng.state = s.weather.rng;
     this.extinct = [s.extinct[0], s.extinct[1]];
     this.everPresent = [s.everPresent[0], s.everPresent[1]];
     this.today = JSON.parse(JSON.stringify(s.today)) as DayCounters;
@@ -536,4 +566,4 @@ export class World {
   }
 }
 
-export { AState, Species };
+export { AState, Species, Wx };

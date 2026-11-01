@@ -6,7 +6,7 @@ import { Session, type SessionOptions, type Tool } from '../game/session';
 import { load, resetProgress, save, type SaveData } from '../game/storage';
 import { AState, Species } from '../sim/agents';
 import { randomSeed } from '../sim/rng';
-import type { EventKind, SimEvent } from '../sim/world';
+import { Wx, type EventKind, type SimEvent } from '../sim/world';
 import { WorldRenderer } from '../render/renderer';
 import { AmbientAudio } from './audio';
 import { FloatingTip, Modal, h, installTooltips } from './dom';
@@ -63,6 +63,7 @@ export class App {
   private worldWrap!: HTMLElement;
   private canvas!: HTMLCanvasElement;
   private dayChip!: HTMLElement;
+  private wxChip!: HTMLElement;
   private budgetChip!: HTMLElement;
   private goalChip!: HTMLElement;
   private playBtn!: HTMLButtonElement;
@@ -98,11 +99,11 @@ export class App {
     this.renderer.resize();
 
     if (/[?&]stress\b/.test(location.search)) {
-      this.startSandbox({ map: 'forest', seed: 77, seasons: false, randomEvents: false });
+      this.startSandbox({ map: 'forest', seed: 77, seasons: false, weather: false, randomEvents: false });
       this.stress();
     } else {
       // live demo world behind the main menu
-      this.newSession({ mode: 'sandbox', map: 'forest', seed: 1201 });
+      this.newSession({ mode: 'sandbox', map: 'forest', seed: 1201, weather: true });
       this.demo = true;
       this.playing = true;
       this.showMainMenu();
@@ -115,6 +116,7 @@ export class App {
   private buildDom(): void {
     const C = STR.controls;
     this.dayChip = h('span', { class: 'chip', tip: STR.hud.dayTime });
+    this.wxChip = h('span', { class: 'chip', tip: STR.hud.noWeather });
     this.budgetChip = h('span', { class: 'chip budget', tip: STR.hud.budgetTip });
     this.goalChip = h('span', { class: 'chip goal hide-sm' });
     this.playBtn = h('button', { class: 'icon-btn primary', 'aria-label': C.play, tip: C.play, onclick: () => this.togglePlay() }, '▶');
@@ -127,6 +129,7 @@ export class App {
       { class: 'topbar' },
       h('div', { class: 'brand' }, h('span', { class: 'logo' }, '🌿'), h('span', { class: 'title' }, STR.app.title)),
       this.dayChip,
+      this.wxChip,
       this.budgetChip,
       this.goalChip,
       h('span', { class: 'spacer' }),
@@ -218,7 +221,7 @@ export class App {
     this.maybeTutorial();
   }
 
-  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; randomEvents: boolean }): void {
+  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; weather: boolean; randomEvents: boolean }): void {
     this.demo = false;
     this.modal.close();
     this.newSession({ mode: 'sandbox', ...o });
@@ -452,6 +455,9 @@ export class App {
         case 'eventEnd':
           this.banner(fmt(STR.events.ended, { name: STR.events.names[e.kind] }), '', 'good', 4000);
           break;
+        case 'weather':
+          if (e.kind === Wx.Storm || e.kind === Wx.Heat || e.kind === Wx.Fog || e.kind === Wx.Snow) this.tip('weather', 'capacity');
+          break;
         case 'newDay':
           if (!this.demo) this.dailyTips();
           break;
@@ -479,7 +485,7 @@ export class App {
   }
 
   /** contextual tip shown once per save */
-  tip(id: 'pyramid' | 'overgrazing' | 'firstWolf' | 'cycle' | 'drought', card: string): void {
+  tip(id: 'pyramid' | 'overgrazing' | 'firstWolf' | 'cycle' | 'drought' | 'weather', card: string): void {
     if (this.demo || this.save.tipsSeen.includes(id)) return;
     this.save.tipsSeen.push(id);
     save(this.save);
@@ -521,7 +527,7 @@ export class App {
     const s = this.session;
     if (this.demo) {
       // the menu demo just restarts quietly
-      this.newSession({ mode: 'sandbox', map: 'forest', seed: randomSeed() % 10000 });
+      this.newSession({ mode: 'sandbox', map: 'forest', seed: randomSeed() % 10000, weather: true });
       this.setPlaying(true);
       return;
     }
@@ -568,6 +574,12 @@ export class App {
     const bar = h('span', { class: 'daybar', 'aria-hidden': 'true' }, h('i', { style: `width:${(w.dayFrac * 100).toFixed(0)}%` }));
     this.dayChip.append(night ? '🌙' : '☀️', ` ${fmt(H.day, { n: w.day + 1 })}`, bar, seasonTxt ? ` ${seasonTxt}` : '');
     this.dayChip.dataset.tip = `${night ? H.night : H.dayTime}${seasonTxt ? ' · ' + seasonTxt : ' · ' + H.noSeasons}`;
+    if (w.weatherEnabled) {
+      const k = w.wx.kind;
+      this.wxChip.style.display = '';
+      this.wxChip.textContent = `${H.weatherIcons[k]} ${H.weatherNames[k]}`;
+      this.wxChip.dataset.tip = `${H.weatherEffects[k]} ${H.moisture}: %${Math.round(w.wx.moisture * 100)}`;
+    } else this.wxChip.style.display = 'none';
     this.budgetChip.textContent = `💰 ${this.session.unlimited ? H.unlimited : num(Math.floor(this.session.budget))}`;
     const L = this.session.level;
     if (L && !this.demo) {

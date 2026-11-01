@@ -4,6 +4,7 @@ import { Tile } from '../sim/grid';
 import type { World } from '../sim/world';
 import { Camera } from './camera';
 import { Fx } from './fx';
+import { WeatherFx } from './weatherFx';
 import { getSprites, mulberry, RABBIT_FRAMES, WOLF_FRAMES, type SpriteSet } from './sprites';
 
 const BAKE = 16; // px per tile for baked layers
@@ -23,6 +24,7 @@ export class WorldRenderer {
   readonly g: CanvasRenderingContext2D;
   readonly cam = new Camera();
   readonly fx = new Fx();
+  readonly weatherFx = new WeatherFx();
   private sprites: SpriteSet;
   private dpr = 1;
   private world: World | null = null;
@@ -228,6 +230,8 @@ export class WorldRenderer {
 
     // fx
     this.fx.update(dt);
+    this.weatherFx.reducedMotion = this.reducedMotion;
+    this.weatherFx.update(w.weatherEnabled ? w.wx.kind : null, dt);
     this.fx.draw(g, (x, y) => cam.toScreen(x, y), Z);
 
     // environment tints
@@ -438,6 +442,7 @@ export class WorldRenderer {
       g.fillStyle = 'rgba(250,200,90,0.14)';
       g.fillRect(ox, oy, W, H);
     }
+    this.weatherFx.draw(g, this.cam.vw, this.cam.vh, this.time);
     const d = WorldRenderer.darkness(w.dayFrac);
     if (d > 0) {
       g.fillStyle = rgb(P.night, d * 0.38);

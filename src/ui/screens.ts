@@ -41,7 +41,7 @@ export function levelSelect(save: SaveData, cb: { play(l: LevelDef): void; back(
   LEVELS.forEach((L, i) => {
     const unlocked = i === 0 || (save.stars[LEVELS[i - 1]!.id] ?? 0) > 0;
     const info = STR.levels.list[i]!;
-    const tags = [L.map === 'river' ? `🏞️ ${M.river}` : `🌲 ${M.forest}`, L.seasons ? '🍂' : '', L.randomEvents ? '⚡' : ''].filter(Boolean).join(' ');
+    const tags = [L.map === 'river' ? `🏞️ ${M.river}` : `🌲 ${M.forest}`, L.seasons ? '🍂' : '', L.weather ? '🌦️' : '', L.randomEvents ? '⚡' : ''].filter(Boolean).join(' ');
     grid.append(
       h(
         'button',
@@ -88,7 +88,7 @@ export function goalText(L: LevelDef): string {
   return fmt(STR.levels.goalStable, { days: g.days, cv: g.maxCv.toFixed(2).replace('.', ',') });
 }
 
-export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; seasons: boolean; randomEvents: boolean }): void; back(): void }): HTMLElement {
+export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; seasons: boolean; weather: boolean; randomEvents: boolean }): void; back(): void }): HTMLElement {
   const M = STR.menu;
   let map: MapKind = 'forest';
   const forest = h('button', { class: 'map-opt on', onclick: () => pick('forest') }, h('b', {}, '🌲 ', M.forest), h('span', {}, M.forestDesc));
@@ -100,6 +100,7 @@ export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; season
   };
   const seed = h('input', { type: 'number', value: String(randomSeed() % 100000), min: '0', 'aria-label': M.seed });
   const seasons = h('input', { type: 'checkbox' });
+  const weather = h('input', { type: 'checkbox', checked: true });
   const events = h('input', { type: 'checkbox' });
   return h(
     'div',
@@ -109,12 +110,12 @@ export function sandboxSetup(cb: { start(o: { map: MapKind; seed: number; season
     h('h4', {}, M.chooseMap),
     h('div', { class: 'map-pick' }, forest, river),
     h('div', { class: 'form-row' }, h('label', {}, M.seed), seed, h('button', { class: 'icon-btn', onclick: () => (seed.value = String(randomSeed() % 100000)) }, '🎲 ', M.randomSeed)),
-    h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', M.seasons), h('label', { class: 'toggle' }, events, '⚡ ', M.randomEvents)),
+    h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', M.seasons), h('label', { class: 'toggle' }, weather, '🌦️ ', M.weather), h('label', { class: 'toggle' }, events, '⚡ ', M.randomEvents)),
     h(
       'div',
       { class: 'modal-actions' },
       h('button', { class: 'icon-btn', onclick: cb.back }, '← ', M.back),
-      h('button', { class: 'icon-btn primary', onclick: () => cb.start({ map, seed: Number(seed.value) || 1, seasons: seasons.checked, randomEvents: events.checked }) }, '▶ ', M.start),
+      h('button', { class: 'icon-btn primary', onclick: () => cb.start({ map, seed: Number(seed.value) || 1, seasons: seasons.checked, weather: weather.checked, randomEvents: events.checked }) }, '▶ ', M.start),
     ),
   );
 }
@@ -262,6 +263,8 @@ export function settingsScreen(s: Session, cb: { trigger(k: EventKind): void }):
   }
   const seasons = h('input', { type: 'checkbox', checked: s.world.seasonsEnabled });
   seasons.addEventListener('change', () => (s.world.seasonsEnabled = seasons.checked));
+  const weather = h('input', { type: 'checkbox', checked: s.world.weatherEnabled });
+  weather.addEventListener('change', () => (s.world.weatherEnabled = weather.checked));
   const events = h('input', { type: 'checkbox', checked: s.world.randomEvents });
   events.addEventListener('change', () => (s.world.randomEvents = events.checked));
   const reset = () => {
@@ -276,7 +279,7 @@ export function settingsScreen(s: Session, cb: { trigger(k: EventKind): void }):
     'div',
     {},
     h('h2', {}, '⚙️ ', T.title),
-    h('div', { class: 'settings-group' }, h('h4', {}, T.groups.world), h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', T.seasons), h('label', { class: 'toggle' }, events, '⚡ ', T.randomEvents))),
+    h('div', { class: 'settings-group' }, h('h4', {}, T.groups.world), h('div', { class: 'form-row' }, h('label', { class: 'toggle' }, seasons, '🍂 ', T.seasons), h('label', { class: 'toggle' }, weather, '🌦️ ', T.weather), h('label', { class: 'toggle' }, events, '⚡ ', T.randomEvents))),
     h('div', { class: 'form-row' }, h('b', {}, T.triggerEvent, ':'), ...(['drought', 'disease', 'winter'] as EventKind[]).map((k) => h('button', { class: 'icon-btn', onclick: () => cb.trigger(k) }, STR.events.names[k]))),
     body,
     h('div', { class: 'modal-actions' }, h('button', { class: 'icon-btn', onclick: reset }, '↺ ', T.reset)),

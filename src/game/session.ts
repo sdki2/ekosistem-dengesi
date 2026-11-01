@@ -15,6 +15,7 @@ export interface SessionOptions {
   map?: MapKind;
   seed?: number;
   seasons?: boolean;
+  weather?: boolean;
   randomEvents?: boolean;
   cfg?: SimConfig;
 }
@@ -63,6 +64,7 @@ export class Session {
       wolves: L ? L.wolves : 6,
       initialPlant: L?.initialPlant,
       seasons: L ? L.seasons : !!opts.seasons,
+      weather: L ? L.weather : !!opts.weather,
       randomEvents: L ? L.randomEvents : !!opts.randomEvents,
       scheduledEvents: L ? L.scheduled : [],
     });

@@ -119,7 +119,7 @@ export function updateRabbit(w: World, i: number): void {
   if (a.age[i]! > a.maxAge[i]!) return w.kill(i, 'old');
 
   if (g.hasWater) {
-    a.thirst[i]! += r.thirstPerTick;
+    a.thirst[i]! += r.thirstPerTick * w.thirstMul;
     if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
   }
 
@@ -127,7 +127,7 @@ export function updateRabbit(w: World, i: number): void {
   let fleeing = false;
 
   // threat detection
-  const wolf = w.wolfHash.nearest(a, x, y, r.vision);
+  const wolf = w.wolfHash.nearest(a, x, y, r.vision * w.visionMul);
   const hiddenHere = g.isCover(x, y);
   if (wolf >= 0) {
     const wx = a.x[wolf]!;
@@ -283,7 +283,7 @@ export function updateWolf(w: World, i: number): void {
   if (a.age[i]! > a.maxAge[i]!) return w.kill(i, 'old');
 
   if (g.hasWater) {
-    a.thirst[i]! += wc.thirstPerTick;
+    a.thirst[i]! += wc.thirstPerTick * w.thirstMul;
     if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
   }
 
@@ -305,7 +305,7 @@ export function updateWolf(w: World, i: number): void {
     let prey = -1;
     if (hungry) {
       const cd2 = wc.coverDetect * wc.coverDetect;
-      prey = w.rabbitHash.nearest(a, x, y, wc.vision, -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!) || w.rng.chance(wc.scentChance));
+      prey = w.rabbitHash.nearest(a, x, y, wc.vision * w.visionMul, -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!) || w.rng.chance(wc.scentChance * w.scentMul));
     }
     if (prey >= 0) {
       a.state[i] = AState.Hunt;

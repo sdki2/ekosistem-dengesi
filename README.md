@@ -108,6 +108,25 @@ Her senaryo bölümü, kurallara göre davranan basit bir "makul oyuncu" betiği
 **Performans:** ~1.400 hayvanla bir tick ≈ 0,6 ms (komşu aramaları için uzamsal ızgara/hash).
 En yüksek hızda (8×, saniyede 160 tick) bile kare başına yaklaşık 2 ms simülasyon süresi düşer.
 
+### Hava durumu
+
+Hava durumu 3. bölümden itibaren (ve Serbest modda isteğe bağlı) açıktır. Tohumlu, ayrı bir rastgele
+sayı akışından çıkar: açık, bulutlu, yağmurlu, fırtına, sıcak hava, sis ve kar. Her hava birkaç saat
+sürer; hangisinin geleceği mevsime bağlıdır (kış karlı, yaz sıcak, sonbahar sisli). Kuraklık ve sert kış
+olayları da havayı o yöne iter.
+
+- **Toprak nemi (0–1):** Yağmur ve fırtına nemi artırır; açık ve sıcak hava azaltır. Bitki büyüme hızı
+  `0,5 + nem` ile çarpılır, yani kurak dönemler gerçekten bitkileri zayıflatır.
+- **Görüş:** Sis (×0,55) ve fırtına (×0,6) hem avcının hem avın görüşünü kısaltır; yağmur kurtların koku
+  takibini azaltır.
+- **Susuzluk ve enerji:** Sıcakta hayvanlar daha çok susar (nehir haritası) ve enerji harcar; fırtına ve kar da
+  enerji harcatır.
+- Hava yalnızca ayarlanır, simülasyon çekirdeğine ek rastgelelik katmaz: kapalıyken sonuçlar eskisiyle aynıdır.
+  Geri sarma, kayıtlı hava durumunu da geri getirir.
+
+Çizim tarafında yağmur çizgileri, kar taneleri, sis, sıcak parıltı ve fırtınada şimşek vardır; "hareketi azalt"
+açıksa yalnızca renk tonları gösterilir.
+
 ### Basitleştirmeler
 
 Bu bir öğretim modeli, gerçek bir ekosistemin tamamı değil:
