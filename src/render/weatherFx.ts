@@ -16,8 +16,11 @@ const MAX_FLAKES = 110;
 export class WeatherFx {
   private level = new Float32Array(7);
   reducedMotion = false;
+  /** lightning flash 0–1, set by the sim's lightning events */
+  flash = 0;
 
   update(kind: Wx | null, dt: number): void {
+    this.flash = Math.max(0, this.flash - dt * 3.2);
     const k = Math.min(1, dt * 0.6);
     for (let i = 0; i < this.level.length; i++) {
       const target = kind === i ? 1 : 0;
@@ -112,16 +115,10 @@ export class WeatherFx {
       g.stroke();
     }
 
-    // lightning (storm only, never with reduced motion)
-    if (L[Wx.Storm]! > 0.5 && !still) {
-      const slot = Math.floor(time * 0.5);
-      if (hash(slot * 3.7) < 0.35) {
-        const f = time * 0.5 - slot;
-        if (f < 0.16) {
-          g.fillStyle = `rgba(255,255,255,${(0.32 * (1 - f / 0.16) * L[Wx.Storm]!).toFixed(3)})`;
-          g.fillRect(0, 0, W, H);
-        }
-      }
+    // lightning strikes come from the simulation
+    if (this.flash > 0.01 && !still) {
+      g.fillStyle = `rgba(255,255,255,${(0.38 * this.flash).toFixed(3)})`;
+      g.fillRect(0, 0, W, H);
     }
 
     // snow

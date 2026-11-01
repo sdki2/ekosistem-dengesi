@@ -1,6 +1,8 @@
 export const enum Species {
   Rabbit = 0,
   Wolf = 1,
+  /** optional large grazer: competes with rabbits, hard but rewarding prey for wolves */
+  Deer = 2,
 }
 
 export const enum AState {
@@ -16,7 +18,7 @@ export const enum AState {
   Rest = 9,
 }
 
-export type DeathCause = 'starved' | 'old' | 'thirst' | 'eaten' | 'disease' | 'removed';
+export type DeathCause = 'starved' | 'old' | 'thirst' | 'eaten' | 'disease' | 'removed' | 'weather';
 
 /**
  * Struct-of-arrays agent pool. Slots are reused through a free list.

@@ -35,6 +35,7 @@ export class WorldRenderer {
   private decorLayer!: HTMLCanvasElement;
   private trees: { x: number; y: number; v: number; phase: number; s: number }[] = [];
   private ryBuf = new Float32Array(2048);
+  private bakedWaterVersion = 0;
   private waterTiles: { x: number; y: number; h: number }[] = [];
   private tileHash!: Float32Array;
   private order: number[] = [];
@@ -74,11 +75,52 @@ export class WorldRenderer {
     this.tileHash = new Float32Array(g.w * g.h);
     for (let i = 0; i < this.tileHash.length; i++) this.tileHash[i] = rnd();
 
-    // water layer
-    this.waterLayer = document.createElement('canvas');
+    this.bakeWater();
+
+    // decor: ground texture + bushes
+    this.decorLayer = document.createElement('canvas');
+    this.decorLayer.width = g.w * BAKE;
+    this.decorLayer.height = g.h * BAKE;
+    const dg = this.decorLayer.getContext('2d')!;
+    for (let y = 0; y < g.h; y++)
+      for (let x = 0; x < g.w; x++) {
+        const t = g.tiles[g.idx(x, y)];
+        if (t === Tile.Water || t === Tile.Ford) continue;
+        for (let k = 0; k < 3; k++) {
+          dg.fillStyle = rnd() < 0.5 ? 'rgba(255,255,240,0.10)' : 'rgba(60,70,40,0.07)';
+          dg.beginPath();
+          dg.arc((x + rnd()) * BAKE, (y + rnd()) * BAKE, BAKE * (0.06 + rnd() * 0.08), 0, Math.PI * 2);
+          dg.fill();
+        }
+      }
+    const bs = this.sprites.bushes;
+    for (let y = 0; y < g.h; y++)
+      for (let x = 0; x < g.w; x++) {
+        if (g.tiles[g.idx(x, y)] !== Tile.Bush) continue;
+        const img = bs[Math.floor(rnd() * bs.length)]!;
+        const s = BAKE * (1.05 + rnd() * 0.25);
+        dg.drawImage(img, (x + 0.5) * BAKE - s / 2 + (rnd() - 0.5) * 3, (y + 0.5) * BAKE - s / 2 + (rnd() - 0.5) * 3, s, s);
+      }
+
+    // trees (drawn per frame for sway + depth sorting)
+    this.trees = [];
+    for (let y = 0; y < g.h; y++)
+      for (let x = 0; x < g.w; x++)
+        if (g.tiles[g.idx(x, y)] === Tile.Tree) this.trees.push({ x: x + 0.5 + (rnd() - 0.5) * 0.5, y: y + 0.7 + rnd() * 0.3, v: Math.floor(rnd() * 3), phase: rnd() * 6.28, s: 1.45 + rnd() * 0.55 });
+    this.trees.sort((a, b) => a.y - b.y);
+    this.fx.clear();
+    this.cam.fit();
+  }
+
+  /** (re)bake the water + ford layer; runs again when rivers shrink or flood */
+  private bakeWater(): void {
+    const w = this.world!;
+    const g = w.grid;
+    if (!this.waterLayer) this.waterLayer = document.createElement('canvas');
     this.waterLayer.width = g.w * BAKE;
     this.waterLayer.height = g.h * BAKE;
     const wg = this.waterLayer.getContext('2d')!;
+    const rnd = mulberry(w.seed + g.waterVersion * 977);
     this.waterTiles = [];
     const isWet = (x: number, y: number) => g.inBounds(x, y) && (g.tiles[g.idx(x, y)] === Tile.Water || g.tiles[g.idx(x, y)] === Tile.Ford);
     // shallow rim
@@ -115,40 +157,7 @@ export class WorldRenderer {
           wg.fill();
         }
       }
-
-    // decor: ground texture + bushes
-    this.decorLayer = document.createElement('canvas');
-    this.decorLayer.width = g.w * BAKE;
-    this.decorLayer.height = g.h * BAKE;
-    const dg = this.decorLayer.getContext('2d')!;
-    for (let y = 0; y < g.h; y++)
-      for (let x = 0; x < g.w; x++) {
-        const t = g.tiles[g.idx(x, y)];
-        if (t === Tile.Water || t === Tile.Ford) continue;
-        for (let k = 0; k < 3; k++) {
-          dg.fillStyle = rnd() < 0.5 ? 'rgba(255,255,240,0.10)' : 'rgba(60,70,40,0.07)';
-          dg.beginPath();
-          dg.arc((x + rnd()) * BAKE, (y + rnd()) * BAKE, BAKE * (0.06 + rnd() * 0.08), 0, Math.PI * 2);
-          dg.fill();
-        }
-      }
-    const bs = this.sprites.bushes;
-    for (let y = 0; y < g.h; y++)
-      for (let x = 0; x < g.w; x++) {
-        if (g.tiles[g.idx(x, y)] !== Tile.Bush) continue;
-        const img = bs[Math.floor(rnd() * bs.length)]!;
-        const s = BAKE * (1.05 + rnd() * 0.25);
-        dg.drawImage(img, (x + 0.5) * BAKE - s / 2 + (rnd() - 0.5) * 3, (y + 0.5) * BAKE - s / 2 + (rnd() - 0.5) * 3, s, s);
-      }
-
-    // trees (drawn per frame for sway + depth sorting)
-    this.trees = [];
-    for (let y = 0; y < g.h; y++)
-      for (let x = 0; x < g.w; x++)
-        if (g.tiles[g.idx(x, y)] === Tile.Tree) this.trees.push({ x: x + 0.5 + (rnd() - 0.5) * 0.5, y: y + 0.7 + rnd() * 0.3, v: Math.floor(rnd() * 3), phase: rnd() * 6.28, s: 1.45 + rnd() * 0.55 });
-    this.trees.sort((a, b) => a.y - b.y);
-    this.fx.clear();
-    this.cam.fit();
+    this.bakedWaterVersion = g.waterVersion;
   }
 
   private updatePlantLayer(): void {
@@ -229,6 +238,7 @@ export class WorldRenderer {
     this.drawEntities(alpha, overlay, vx0, vy0, vx1, vy1);
 
     // fx
+    if (w.grid.waterVersion !== this.bakedWaterVersion) this.bakeWater();
     this.fx.update(dt);
     this.weatherFx.reducedMotion = this.reducedMotion;
     this.weatherFx.update(w.weatherEnabled ? w.wx.kind : null, dt);
@@ -335,7 +345,7 @@ export class WorldRenderer {
       const sp = a.species[i] as Species;
       const st = a.state[i] as AState;
       const moving = Math.abs(a.x[i]! - a.px[i]!) + Math.abs(a.y[i]! - a.py[i]!) > 0.01;
-      const sc = sp === Species.Rabbit ? w.cfg.rabbit : w.cfg.wolf;
+      const sc = w.speciesCfg(sp);
       const grow = 0.6 + 0.4 * Math.min(1, a.age[i]! / (sc.maturityDays * tpd));
       const flip = a.hx[i]! < 0;
       const [sx, sy] = cam.toScreen(x, y);
@@ -358,6 +368,13 @@ export class WorldRenderer {
           img = S.rabbit[f]!;
           hop = Math.sin((phase % 1) * Math.PI) * (st === AState.Flee ? 0.3 : 0.18);
         }
+      } else if (sp === Species.Deer) {
+        size = Z * 1.65 * grow;
+        anchorX = 0.45;
+        anchorY = 0.74;
+        if (st === AState.Sleep) img = S.deer[6]!;
+        else if (!moving) img = S.deer[0]!;
+        else img = S.deer[Math.floor((phase % 1) * 6)]!;
       } else {
         size = Z * 1.45 * grow;
         anchorX = 0.45;
@@ -465,9 +482,9 @@ export class WorldRenderer {
       g.fill();
       g.stroke();
       g.setLineDash([]);
-    } else if (ov.tool === 'rabbit' || ov.tool === 'wolf') {
-      const img = ov.tool === 'rabbit' ? this.sprites.rabbit[0]! : this.sprites.wolf[0]!;
-      const size = Z * (ov.tool === 'rabbit' ? 0.95 : 1.45);
+    } else if (ov.tool === 'rabbit' || ov.tool === 'wolf' || ov.tool === 'deer') {
+      const img = ov.tool === 'rabbit' ? this.sprites.rabbit[0]! : ov.tool === 'deer' ? this.sprites.deer[0]! : this.sprites.wolf[0]!;
+      const size = Z * (ov.tool === 'rabbit' ? 0.95 : ov.tool === 'deer' ? 1.65 : 1.45);
       g.globalAlpha = 0.55;
       g.drawImage(img, sx - size * 0.45, sy - size * 0.78, size, size);
       g.globalAlpha = 1;

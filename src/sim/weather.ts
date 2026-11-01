@@ -25,16 +25,18 @@ interface WxEffect {
   metabolism: number;
   /** wolf scent-tracking multiplier (rain washes scents away) */
   scent: number;
+  /** direct plant growth multiplier on top of soil moisture */
+  regrow: number;
 }
 
 export const WX_EFFECT: Record<number, WxEffect> = {
-  [Wx.Clear]: { moisture: -0.0012, vision: 1, thirst: 1, metabolism: 1, scent: 1 },
-  [Wx.Cloudy]: { moisture: -0.0005, vision: 1, thirst: 0.9, metabolism: 1, scent: 1 },
-  [Wx.Rain]: { moisture: 0.0085, vision: 0.85, thirst: 0.6, metabolism: 1, scent: 0.5 },
-  [Wx.Storm]: { moisture: 0.014, vision: 0.6, thirst: 0.6, metabolism: 1.1, scent: 0.25 },
-  [Wx.Heat]: { moisture: -0.0035, vision: 1, thirst: 1.7, metabolism: 1.08, scent: 1 },
-  [Wx.Fog]: { moisture: 0, vision: 0.55, thirst: 0.9, metabolism: 1, scent: 1.2 },
-  [Wx.Snow]: { moisture: 0.0015, vision: 0.8, thirst: 0.8, metabolism: 1.1, scent: 0.7 },
+  [Wx.Clear]: { moisture: -0.0034, vision: 1, thirst: 1, metabolism: 1, scent: 1, regrow: 1.05 },
+  [Wx.Cloudy]: { moisture: -0.0018, vision: 1, thirst: 0.9, metabolism: 1, scent: 1, regrow: 1 },
+  [Wx.Rain]: { moisture: 0.0072, vision: 0.85, thirst: 0.6, metabolism: 1, scent: 0.5, regrow: 1.25 },
+  [Wx.Storm]: { moisture: 0.009, vision: 0.6, thirst: 0.6, metabolism: 1.1, scent: 0.25, regrow: 1.15 },
+  [Wx.Heat]: { moisture: -0.0085, vision: 1, thirst: 1.7, metabolism: 1.08, scent: 1, regrow: 0.6 },
+  [Wx.Fog]: { moisture: -0.001, vision: 0.55, thirst: 0.9, metabolism: 1, scent: 1.2, regrow: 1 },
+  [Wx.Snow]: { moisture: 0.0006, vision: 0.8, thirst: 0.8, metabolism: 1.1, scent: 0.7, regrow: 0.2 },
 };
 
 /**
@@ -46,7 +48,7 @@ const TABLE: number[][] = [
   [5, 2, 2, 1.2, 3, 0.3, 0], // summer
   [3, 3, 3, 1, 0, 3, 0], // autumn
   [2, 3, 0.5, 0, 0, 2, 5], // winter
-  [4, 3, 3, 1, 0.6, 1, 0], // seasons off
+  [4, 3, 3, 1, 1.4, 1, 0], // seasons off
 ];
 
 /**
@@ -59,11 +61,17 @@ export class WeatherState {
   until = 0;
   /** soil moisture 0–1 */
   moisture: number;
+  /** river / pond level 0–1, follows soil moisture slowly */
+  water: number;
+  /** forecast: the next spell */
+  next: Wx = Wx.Clear;
   rng: Rng;
 
   constructor(seed: number, moistureStart: number) {
     this.rng = new Rng(hashSeed(seed) ^ 0x57ea7e);
     this.moisture = moistureStart;
+    this.water = moistureStart;
+    this.next = Wx.Clear;
   }
 
   get effect(): WxEffect {
@@ -74,9 +82,11 @@ export class WeatherState {
   step(tick: number, season: number, minTicks: number, maxTicks: number, forced: 'drought' | 'winter' | null): Wx | null {
     const e = WX_EFFECT[this.kind]!;
     this.moisture = Math.min(1, Math.max(0, this.moisture + e.moisture));
+    this.water += (this.moisture - this.water) * 0.012;
     if (tick < this.until) return null;
     const prev = this.kind;
-    this.kind = this.pick(season, forced);
+    this.kind = tick === 0 && this.until === 0 ? this.pick(season, forced) : this.next;
+    this.next = this.pick(season, forced);
     this.until = tick + this.rng.int(minTicks, maxTicks);
     return this.kind !== prev ? this.kind : null;
   }

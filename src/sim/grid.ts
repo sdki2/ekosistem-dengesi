@@ -23,7 +23,10 @@ export class Grid {
   readonly growMul: Float32Array;
   /** BFS distance (tiles) to the nearest drinkable tile; 255 = none */
   readonly waterDist: Uint8Array;
-  /** set when plant amounts change a lot (renderer hint) */
+  /** water tiles that can dry out: distance (1 = touching land) from the shore; 0 = permanent */
+  readonly shoreRank: Uint8Array;
+  /** bumped whenever tiles flood or dry, so the renderer re-bakes water */
+  waterVersion = 0;
   hasWater = false;
 
   constructor(w: number, h: number) {
@@ -34,6 +37,7 @@ export class Grid {
     this.plant = new Float32Array(n);
     this.growMul = new Float32Array(n);
     this.waterDist = new Uint8Array(n).fill(255);
+    this.shoreRank = new Uint8Array(n);
   }
 
   idx(x: number, y: number): number {
@@ -137,7 +141,9 @@ export class Grid {
         if (this.inBounds(nx, ny) && tiles[ny * w + nx] === Tile.Tree) trees++;
       }
       if (trees > 0) m *= cfg.plant.shadeMul;
-      if (kind === 'river') {
+      if (kind === 'forest') {
+        if (this.waterDist[i]! <= 2) m *= 1.35;
+      } else {
         const wd = this.waterDist[i]!;
         if (wd <= 1) m *= cfg.plant.nearWaterMul;
         else if (wd <= 4) m *= 1.0;
@@ -145,6 +151,47 @@ export class Grid {
         else m *= cfg.plant.farWaterMul;
       }
       this.growMul[i] = m;
+    }
+  }
+
+  /** BFS rank of every open-water tile from the shoreline (1 = next to land) */
+  computeShoreRanks(): void {
+    const { w, h, tiles } = this;
+    this.shoreRank.fill(0);
+    let frontier: number[] = [];
+    for (let i = 0; i < w * h; i++) {
+      if (tiles[i] !== Tile.Water) continue;
+      const x = i % w;
+      const y = (i / w) | 0;
+      for (let d = 0; d < 4; d++) {
+        const nx = x + DX4[d]!;
+        const ny = y + DY4[d]!;
+        if (this.inBounds(nx, ny) && tiles[ny * w + nx] !== Tile.Water) {
+          this.shoreRank[i] = 1;
+          frontier.push(i);
+          break;
+        }
+      }
+    }
+    let rank = 1;
+    while (frontier.length && rank < 6) {
+      const nextF: number[] = [];
+      for (const i of frontier) {
+        const x = i % w;
+        const y = (i / w) | 0;
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DX4[d]!;
+          const ny = y + DY4[d]!;
+          if (!this.inBounds(nx, ny)) continue;
+          const j = ny * w + nx;
+          if (tiles[j] === Tile.Water && this.shoreRank[j] === 0) {
+            this.shoreRank[j] = rank + 1;
+            nextF.push(j);
+          }
+        }
+      }
+      frontier = nextF;
+      rank++;
     }
   }
 

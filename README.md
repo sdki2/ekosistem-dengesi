@@ -50,7 +50,7 @@ performans testi başlatır (sonuçlar 10 saniyede bir konsola da yazılır).
 | Boşluk | Oynat / duraklat |
 | N | Bir adım (tick) ilerle |
 | T | Hız: 1× → 2× → 4× → 8× |
-| 1–5 | Araçlar: 🌱 Bitki ek · 🐇 Tavşan · 🐺 Kurt · 🔍 İncele · ✋ Kaldır |
+| 1–6 | Araçlar: 🌱 Bitki ek · 🐇 Tavşan · 🐺 Kurt · 🔍 İncele · ✋ Kaldır · 🦌 Geyik |
 | [ ve ] | Fırça boyutu |
 | Fare tekerleği / iki parmak (sıkıştır) | Yakınlaş / uzaklaş |
 | Sürükle (İncele aracında) · sağ/orta tuşla sürükle · iki parmak | Haritayı kaydır |
@@ -108,31 +108,50 @@ Her senaryo bölümü, kurallara göre davranan basit bir "makul oyuncu" betiği
 **Performans:** ~1.400 hayvanla bir tick ≈ 0,6 ms (komşu aramaları için uzamsal ızgara/hash).
 En yüksek hızda (8×, saniyede 160 tick) bile kare başına yaklaşık 2 ms simülasyon süresi düşer.
 
-### Hava durumu
+### Hava durumu ve su
 
 Hava durumu 3. bölümden itibaren (ve Serbest modda isteğe bağlı) açıktır. Tohumlu, ayrı bir rastgele
 sayı akışından çıkar: açık, bulutlu, yağmurlu, fırtına, sıcak hava, sis ve kar. Her hava birkaç saat
-sürer; hangisinin geleceği mevsime bağlıdır (kış karlı, yaz sıcak, sonbahar sisli). Kuraklık ve sert kış
-olayları da havayı o yöne iter.
+sürer, hangisinin geleceği mevsime bağlıdır ve sağ paneldeki "Hava ve toprak" kartında bir sonraki
+hava önceden görünür. Kuraklık ve sert kış olayları da havayı o yöne iter.
 
-- **Toprak nemi (0–1):** Yağmur ve fırtına nemi artırır; açık ve sıcak hava azaltır. Bitki büyüme hızı
-  `0,5 + nem` ile çarpılır, yani kurak dönemler gerçekten bitkileri zayıflatır.
+- **Toprak nemi (0–1):** Yağmur ve fırtına nemi artırır; açık ve sıcak hava azaltır (uzun kuru dönemde
+  %0'a iner). Bitki büyüme hızı `(0,5 + nem) × havanın kendi çarpanı` ile ölçeklenir: yağmurda hızlı, sıcakta
+  ve karda çok yavaş.
+- **Su seviyesi:** Nehir ve göller toprak nemini yavaşça izler. Kuraklıkta kıyıdaki sığ karolar çamur
+  düzlüğüne dönüşür (nehir daralır, göller küçülür); yağmurlarla yeniden dolar. Taşan sular kıyıdaki
+  hayvanları en yakın kuru karaya taşır. Orman haritasında artık iki küçük göl vardır, bu yüzden orada da
+  susuzluk ve su arama vardır.
+- **Fırtına:** Yıldırım düşer; çevresindeki otlar yanar, açıkta kalan hayvan ölebilir. Tavşanlar ve geyikler
+  çalılıkta saklanır, kurtlar avlanmayı bırakır (çok açlarsa hariç).
 - **Görüş:** Sis (×0,55) ve fırtına (×0,6) hem avcının hem avın görüşünü kısaltır; yağmur kurtların koku
   takibini azaltır.
-- **Susuzluk ve enerji:** Sıcakta hayvanlar daha çok susar (nehir haritası) ve enerji harcar; fırtına ve kar da
-  enerji harcatır.
-- Hava yalnızca ayarlanır, simülasyon çekirdeğine ek rastgelelik katmaz: kapalıyken sonuçlar eskisiyle aynıdır.
-  Geri sarma, kayıtlı hava durumunu da geri getirir.
+- **Sıcak ve soğuk:** Sıcakta hayvanlar daha çok susar, öğle saatlerinde dinlenir (siesta) ve daha çok enerji
+  harcar; kar ve fırtına da enerji harcatır.
+- Hava kapalıyken kuraklık/yağış etkisi yoktur. Geri sarma, hava ve su seviyesini de geri getirir.
 
-Çizim tarafında yağmur çizgileri, kar taneleri, sis, sıcak parıltı ve fırtınada şimşek vardır; "hareketi azalt"
-açıksa yalnızca renk tonları gösterilir.
+Çizim tarafında yağmur çizgileri, kar taneleri, sis, sıcak parıltı ve simülasyondaki yıldırım düşüşlerine
+bağlı şimşek vardır; "hareketi azalt" açıksa yalnızca renk tonları gösterilir.
+
+### Günün saati
+
+Tavşanlar şafak ve alacakaranlıkta daha hızlı otlar, geceleri uyur. Kurtların avı gece ve alacakaranlıkta
+biraz daha kolay yakalaması vardır; tok kurtlar gece ve sıcak öğlede dinlenir.
+
+### Geyik (isteğe bağlı üçüncü tür)
+
+Geyikler büyük otçullardır: tavşanlarla otu paylaşır, ama çalılıklardan da beslenebilir. Kurtlar için zor ama
+doyurucu bir avdır (yakalama şansı düşük, öğün büyük). Serbest modda "Geyik sürüsü" kutusuyla ya da 🦌 aracıyla
+(tuş 6) eklenir; bölümlerde bulunmaz. **Bilinen sınırlama:** Bu sert ekosistemde (tavşan patlamaları, kuraklık)
+geyik sürüleri çoğu zaman 100–250 gün içinde azalıp tükenir; geyiklerin tükenmesi oyunu bitirmez, ama geyik
+bulunması tavşan–kurt dengesini de zorlaştırır. Dengesi tavşan–kurt kadar ayarlanmadı.
 
 ### Basitleştirmeler
 
 Bu bir öğretim modeli, gerçek bir ekosistemin tamamı değil:
 
 - Üreme eşeysizdir (eş aranmaz).
-- Kurtların başka avı yoktur; gerçekte kurtlar geyik gibi büyük avlarla beslenir.
+- Kurtların asıl avı tavşandır; geyik yalnızca isteğe bağlı ikinci avdır ve gerçekçi bir sürü dinamiği yoktur.
 - Biyokütle birimleri soyuttur. Piramit gerçek kilogramları değil, oyundaki göreli oranları gösterir.
 - Shannon indeksi için bitkiler "bitki kümeleri" olarak sayılır (her ~8 bitkili karo bir birey).
 

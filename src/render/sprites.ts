@@ -30,6 +30,8 @@ export interface SpriteSet {
   /** wolf frames: 0..5 trot, 6 rest */
   wolf: Canvas[];
   wolfSize: number;
+  /** deer frames: 0..5 walk, 6 rest */
+  deer: Canvas[];
   trees: Canvas[];
   treeSize: number;
   bushes: Canvas[];
@@ -115,6 +117,114 @@ function drawRabbit(f: number): Canvas {
   g.fillStyle = '#e88f9a';
   ellipse(g, headX + S * 0.125, headY + S * 0.015, S * 0.016, S * 0.012);
   g.fill();
+  return c;
+}
+
+// ───────────────────────── deer ─────────────────────────
+
+const DEER_FRAMES = 6;
+export { DEER_FRAMES };
+
+function drawDeer(f: number): Canvas {
+  const S = 96;
+  const [c, g] = canvas(S, S);
+  const rest = f === 6;
+  const t = (f / DEER_FRAMES) * Math.PI * 2;
+  const bob = rest ? 0 : Math.abs(Math.sin(t)) * S * 0.014;
+  const fur: RGB = [196, 150, 104];
+  const furDark: RGB = [150, 108, 70];
+  const belly: RGB = [236, 220, 192];
+  const by = S * (rest ? 0.6 : 0.46) - bob;
+
+  // legs (far pair darker)
+  if (!rest) {
+    const legs: [number, number, boolean][] = [
+      [0.3, Math.sin(t), true],
+      [0.62, Math.sin(t + Math.PI), true],
+      [0.34, Math.sin(t + Math.PI), false],
+      [0.66, Math.sin(t), false],
+    ];
+    for (const [lx, s, far] of legs) {
+      g.save();
+      g.translate(S * lx, by + S * 0.05);
+      g.rotate(s * 0.4);
+      g.fillStyle = rgb(far ? furDark : shade(fur, 0.9));
+      g.beginPath();
+      g.roundRect(-S * 0.018, 0, S * 0.036, S * 0.3, S * 0.015);
+      g.fill();
+      g.restore();
+    }
+  } else {
+    g.fillStyle = rgb(furDark);
+    g.beginPath();
+    g.ellipse(S * 0.42, by + S * 0.2, S * 0.2, S * 0.04, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // body
+  const grad = g.createLinearGradient(0, by - S * 0.1, 0, by + S * 0.14);
+  grad.addColorStop(0, rgb(shade(fur, 1.06)));
+  grad.addColorStop(1, rgb(furDark));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.ellipse(S * 0.46, by, S * 0.27, S * 0.13, 0, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = rgb(belly, 0.85);
+  g.beginPath();
+  g.ellipse(S * 0.46, by + S * 0.07, S * 0.2, S * 0.06, 0, 0, Math.PI * 2);
+  g.fill();
+  // spots
+  g.fillStyle = 'rgba(255,248,230,0.7)';
+  for (const [sx, sy] of [[0.38, -0.05], [0.48, -0.07], [0.56, -0.02], [0.43, 0.01]] as const) {
+    g.beginPath();
+    g.arc(S * sx, by + S * sy, S * 0.014, 0, Math.PI * 2);
+    g.fill();
+  }
+  // tail
+  g.fillStyle = rgb(belly);
+  g.beginPath();
+  g.ellipse(S * 0.2, by - S * 0.04, S * 0.028, S * 0.04, -0.5, 0, Math.PI * 2);
+  g.fill();
+
+  // neck + head (facing right)
+  const hx = S * 0.76;
+  const hy = by - S * (rest ? 0.12 : 0.17) + bob * 0.3;
+  g.fillStyle = rgb(shade(fur, 1.02));
+  g.beginPath();
+  g.moveTo(S * 0.62, by - S * 0.06);
+  g.lineTo(hx - S * 0.02, hy + S * 0.05);
+  g.lineTo(hx + S * 0.03, hy + S * 0.09);
+  g.lineTo(S * 0.68, by + S * 0.05);
+  g.closePath();
+  g.fill();
+  g.beginPath();
+  g.ellipse(hx + S * 0.03, hy + S * 0.04, S * 0.075, S * 0.05, 0.25, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = rgb(furDark);
+  g.beginPath();
+  g.ellipse(hx + S * 0.1, hy + S * 0.06, S * 0.03, S * 0.022, 0.25, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#2b2118';
+  g.beginPath();
+  g.arc(hx + S * 0.04, hy + S * 0.02, S * 0.01, 0, Math.PI * 2);
+  g.fill();
+  // ear
+  g.fillStyle = rgb(furDark);
+  g.beginPath();
+  g.ellipse(hx - S * 0.02, hy - S * 0.01, S * 0.016, S * 0.035, -0.5, 0, Math.PI * 2);
+  g.fill();
+  // antlers
+  g.strokeStyle = '#8b6a45';
+  g.lineWidth = S * 0.012;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(hx + S * 0.01, hy - S * 0.01);
+  g.lineTo(hx - S * 0.02, hy - S * 0.1);
+  g.moveTo(hx - S * 0.012, hy - S * 0.06);
+  g.lineTo(hx + S * 0.025, hy - S * 0.1);
+  g.moveTo(hx + S * 0.02, hy - S * 0.01);
+  g.lineTo(hx + S * 0.05, hy - S * 0.09);
+  g.stroke();
   return c;
 }
 
@@ -321,6 +431,7 @@ export function getSprites(): SpriteSet {
     rabbitSize: 64,
     wolf: Array.from({ length: 7 }, (_, f) => drawWolf(f)),
     wolfSize: 96,
+    deer: Array.from({ length: 7 }, (_, f) => drawDeer(f)),
     trees: [0, 1, 2].map(drawTree),
     treeSize: 96,
     bushes: [0, 1, 2, 3].map(drawBush),

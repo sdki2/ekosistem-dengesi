@@ -83,7 +83,7 @@ function seekWater(w: World, i: number, speed: number): boolean {
 
 function reproduce(w: World, i: number, species: Species): void {
   const a = w.agents;
-  const sc = species === Species.Rabbit ? w.cfg.rabbit : w.cfg.wolf;
+  const sc = w.speciesCfg(species);
   const tpd = w.cfg.ticksPerDay;
   if (a.cooldown[i]! > 0) {
     a.cooldown[i]!--;
@@ -93,10 +93,10 @@ function reproduce(w: World, i: number, species: Species): void {
   if (species === Species.Rabbit) {
     const near = w.rabbitHash.countNear(a, a.x[i]!, a.y[i]!, w.cfg.rabbit.crowdRadius, i);
     if (near >= w.cfg.rabbit.crowdMax) return;
-  } else {
+  } else if (species === Species.Wolf) {
     const others = w.wolfHash.countNear(a, a.x[i]!, a.y[i]!, w.cfg.wolf.territoryRadius, i);
     if (others >= w.cfg.wolf.territoryMax) return;
-  }
+  } else if (w.deerHash.countNear(a, a.x[i]!, a.y[i]!, 4, i) >= 3) return;
   const litter = w.rng.int(sc.litterMin, sc.litterMax);
   for (let k = 0; k < litter; k++) {
     if (a.energy[i]! - sc.birthEnergy - sc.birthCost < sc.maxEnergy * 0.15) break;
@@ -180,7 +180,8 @@ export function updateRabbit(w: World, i: number): void {
 
   if (!fleeing && a.state[i] !== AState.Hide) {
     const e = a.energy[i]!;
-    if (w.night && e > 35 && a.thirst[i]! < r.thirstSeek) {
+    const restNow = w.night ? e > 35 : w.sheltering ? e > w.cfg.weather.shelterEnergy : w.siesta ? e > 55 : false;
+    if (restNow && a.thirst[i]! < r.thirstSeek) {
       a.state[i] = AState.Sleep;
       metab *= r.restMetabolismMul;
     } else if (g.hasWater && a.thirst[i]! > r.thirstSeek && (e > 30 || a.thirst[i]! > 75 || g.plant[g.idx(Math.floor(x), Math.floor(y))]! < w.cfg.plant.minEdible)) {
@@ -217,7 +218,7 @@ export function updateRabbit(w: World, i: number): void {
       }
       if (!moveOn && !passingThrough && p >= w.cfg.plant.minEdible) {
         a.state[i] = AState.Eat;
-        const bite = Math.min(p, w.cfg.plant.biteSize);
+        const bite = Math.min(p, w.cfg.plant.biteSize * (w.twilight ? w.cfg.time.rabbitTwilightBiteMul : 1));
         g.plant[ti] = p - bite;
         a.energy[i] = Math.min(r.maxEnergy, e + bite * r.plantEnergy);
         if (w.rng.chance(0.02)) w.emit({ type: 'eat', x, y });
@@ -301,28 +302,32 @@ export function updateWolf(w: World, i: number): void {
       a.thirst[i] = Math.max(0, a.thirst[i]! - 25);
     }
   } else {
-    const hungry = a.energy[i]! < wc.huntBelow * wc.maxEnergy;
+    const hungry = a.energy[i]! < (w.sheltering ? wc.huntBelow * Math.min(1, w.cfg.weather.stormHuntBelow / wc.huntBelow) : wc.huntBelow) * wc.maxEnergy;
     let prey = -1;
     if (hungry) {
       const cd2 = wc.coverDetect * wc.coverDetect;
       prey = w.rabbitHash.nearest(a, x, y, wc.vision * w.visionMul, -1, (j, d2) => d2 <= cd2 || !g.isCover(a.x[j]!, a.y[j]!) || w.rng.chance(wc.scentChance * w.scentMul));
     }
+    if (prey < 0 && hungry && w.counts[2]! > 0) {
+      prey = w.deerHash.nearest(a, x, y, wc.vision * w.visionMul);
+    }
     if (prey >= 0) {
+      const isDeer = a.species[prey] === Species.Deer;
       a.state[i] = AState.Hunt;
       a.target[i] = prey;
       const d = moveTo(w, i, a.x[prey]!, a.y[prey]!, wc.runSpeed);
       metab += wc.chaseCost;
-      if (d - wc.runSpeed <= wc.catchDist && w.rng.chance(wc.catchChance)) {
+      if (d - wc.runSpeed <= wc.catchDist && w.rng.chance(wc.catchChance * (isDeer ? w.cfg.deer.wolfCatchMul : 1) * (w.night || w.twilight ? w.cfg.time.wolfNightCatchMul : 1))) {
         const px = a.x[prey]!;
         const py = a.y[prey]!;
         w.kill(prey, 'eaten');
-        a.energy[i] = Math.min(wc.maxEnergy, a.energy[i]! + wc.preyEnergy);
+        a.energy[i] = Math.min(wc.maxEnergy, a.energy[i]! + wc.preyEnergy * (isDeer ? w.cfg.deer.wolfEnergyMul : 1));
         a.rest[i] = wc.handlingTicks;
         w.emit({ type: 'catch', x: px, y: py });
       }
     } else {
       a.target[i] = -1;
-      if (!hungry && w.night) {
+      if (!hungry && (w.night || w.siesta)) {
         a.state[i] = AState.Rest;
         metab *= wc.restMetabolismMul;
       } else {
@@ -375,4 +380,99 @@ function packWander(w: World, i: number, speed: number): void {
   }
   if (w.rng.chance(0.15)) return;
   moveDir(w, i, dx, dy, speed);
+}
+
+// ───────────────────────── deer ─────────────────────────
+
+/** big grazer: bolts from wolves, rests in storms and at midday, browses patches rabbits leave */
+export function updateDeer(w: World, i: number): void {
+  const a = w.agents;
+  const d = w.cfg.deer;
+  const g = w.grid;
+  const x = a.x[i]!;
+  const y = a.y[i]!;
+
+  a.age[i]!++;
+  if (a.age[i]! > a.maxAge[i]!) return w.kill(i, 'old');
+  if (g.hasWater) {
+    a.thirst[i]! += d.thirstPerTick * w.thirstMul;
+    if (a.thirst[i]! >= 100) return w.kill(i, 'thirst');
+  }
+
+  let metab = d.metabolism * w.metabolismMul;
+  let fleeing = false;
+  const wolf = w.wolfHash.nearest(a, x, y, d.vision * w.visionMul);
+  // only run from wolves that are actually hunting or already close, so deer can still graze
+  if (wolf >= 0 && (a.state[wolf] === AState.Hunt || Math.hypot(a.x[wolf]! - x, a.y[wolf]! - y) < 2.2)) {
+    fleeing = true;
+    a.state[i] = AState.Flee;
+    const ang = Math.atan2(y - a.y[wolf]!, x - a.x[wolf]!) + w.rng.range(-0.35, 0.35);
+    moveDir(w, i, Math.cos(ang), Math.sin(ang), d.runSpeed);
+    metab += d.fleeCost;
+    if (w.rng.chance(0.06)) w.emit({ type: 'flee', x, y });
+  }
+
+  if (!fleeing) {
+    const e = a.energy[i]!;
+    const restNow = w.night ? e > 50 : w.sheltering ? e > w.cfg.weather.shelterEnergy + 20 : w.siesta ? e > 70 : false;
+    if (restNow && a.thirst[i]! < d.thirstSeek) {
+      a.state[i] = AState.Sleep;
+      metab *= d.restMetabolismMul;
+    } else if (g.hasWater && a.thirst[i]! > d.thirstSeek && (e > 40 || a.thirst[i]! > 75)) {
+      a.state[i] = AState.SeekWater;
+      if (seekWater(w, i, d.walkSpeed)) {
+        a.state[i] = AState.Drink;
+        a.thirst[i] = Math.max(0, a.thirst[i]! - 25);
+      }
+    } else if (e < d.fullEnergy) {
+      const ti = g.idx(Math.floor(x), Math.floor(y));
+      const p = g.plant[ti]!;
+      if (g.isCover(x, y)) {
+        // browsing shrubs: deer live off bushes when grass is scarce
+        a.state[i] = AState.Eat;
+        a.energy[i] = Math.min(d.maxEnergy, e + d.browseEnergy);
+        if (p >= w.cfg.plant.minEdible) {
+          const bite = Math.min(p, d.biteSize);
+          g.plant[ti] = p - bite;
+          a.energy[i] = Math.min(d.maxEnergy, a.energy[i]! + bite * d.plantEnergy);
+        }
+        if (w.rng.chance(0.02)) w.emit({ type: 'eat', x, y });
+      } else if (p >= w.cfg.plant.minEdible * 1.5) {
+        a.state[i] = AState.Eat;
+        const bite = Math.min(p, d.biteSize);
+        g.plant[ti] = p - bite;
+        a.energy[i] = Math.min(d.maxEnergy, e + bite * d.plantEnergy);
+        if (w.rng.chance(0.02)) w.emit({ type: 'eat', x, y });
+      } else {
+        a.state[i] = AState.SeekFood;
+        // keep walking to the chosen patch; only re-pick on arrival
+        if (Math.hypot(a.tx[i]! - x, a.ty[i]! - y) < 0.5) {
+          let best = -1;
+          let bx = x + a.hx[i]! * 6;
+          let by = y + a.hy[i]! * 6;
+          for (let k = 0; k < 10; k++) {
+            const sx = Math.floor(x + w.rng.range(-6, 6));
+            const sy = Math.floor(y + w.rng.range(-6, 6));
+            if (!g.walkable(sx, sy)) continue;
+            const pv = g.plant[g.idx(sx, sy)]! + (g.isCover(sx, sy) ? 40 : 0);
+            if (pv > best) {
+              best = pv;
+              bx = sx + 0.5;
+              by = sy + 0.5;
+            }
+          }
+          a.tx[i] = Math.min(g.w - 0.5, Math.max(0.5, bx));
+          a.ty[i] = Math.min(g.h - 0.5, Math.max(0.5, by));
+        }
+        moveTo(w, i, a.tx[i]!, a.ty[i]!, d.walkSpeed);
+      }
+    } else {
+      a.state[i] = AState.Wander;
+      wander(w, i, d.walkSpeed * 0.5);
+    }
+  }
+
+  a.energy[i]! -= metab;
+  if (a.energy[i]! <= 0) return w.kill(i, 'starved');
+  if (!fleeing) reproduce(w, i, Species.Deer);
 }

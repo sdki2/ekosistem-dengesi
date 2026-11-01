@@ -74,10 +74,39 @@ export function generateMap(cfg: SimConfig, kind: MapKind, seed: number, initial
     }
   }
 
+  if (kind === 'forest') carvePonds(grid, seed, n3);
+  grid.computeShoreRanks();
   grid.finalize(cfg, kind);
 
   for (let i = 0; i < grid.plant.length; i++) {
     grid.plant[i] = grid.growMul[i]! > 0 ? rng.range(initialPlant[0], initialPlant[1]) : 0;
   }
   return grid;
+}
+
+/** two small ponds in the forest, drawn from their own RNG so the rest of the map is unchanged */
+function carvePonds(grid: Grid, seed: number, n3: (x: number, y: number) => number): void {
+  const r = new Rng(seed ^ 0x90d5);
+  const { w, h } = grid;
+  const centers: [number, number][] = [];
+  for (let tries = 0; tries < 200 && centers.length < 2; tries++) {
+    const cx = r.range(10, w - 10);
+    const cy = r.range(7, h - 7);
+    if (centers.every(([x, y]) => Math.hypot(x - cx, y - cy) > 22)) centers.push([cx, cy]);
+  }
+  for (const [cx, cy] of centers) {
+    const rx = r.range(2.8, 3.8);
+    const ry = r.range(2.1, 2.9);
+    for (let y = Math.floor(cy - ry - 2); y <= Math.ceil(cy + ry + 2); y++) {
+      for (let x = Math.floor(cx - rx - 2); x <= Math.ceil(cx + rx + 2); x++) {
+        if (!grid.inBounds(x, y)) continue;
+        const dx = (x + 0.5 - cx) / rx;
+        const dy = (y + 0.5 - cy) / ry;
+        const d = Math.sqrt(dx * dx + dy * dy) + (n3(x, y) - 0.5) * 0.35;
+        const i = grid.idx(x, y);
+        if (d < 1) grid.tiles[i] = Tile.Water;
+        else if (d < 1.3 && grid.tiles[i] !== Tile.Water) grid.tiles[i] = n3(x, y) > 0.45 ? Tile.Bush : Tile.Grass;
+      }
+    }
+  }
 }

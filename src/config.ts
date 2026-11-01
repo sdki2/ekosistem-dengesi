@@ -107,6 +107,25 @@ export interface SimConfig {
     sprintCost: number;
   };
 
+  deer: SpeciesConfig & {
+    /** energy gained per plant unit eaten */
+    plantEnergy: number;
+    /** plant units bitten per tick */
+    biteSize: number;
+    /** leaves a patch below this plant % */
+    giveUp: number;
+    /** stops eating above this energy */
+    fullEnergy: number;
+    /** a wolf's catch chance is multiplied by this against deer */
+    wolfCatchMul: number;
+    /** a wolf's meal from deer = preyEnergy × this */
+    wolfEnergyMul: number;
+    /** sprint energy cost per tick while fleeing */
+    fleeCost: number;
+    /** energy per tick from browsing shrubs on a bush tile (deer niche: leaves grass to rabbits) */
+    browseEnergy: number;
+  };
+
   wolf: SpeciesConfig & {
     /** energy gained from catching one rabbit */
     preyEnergy: number;
@@ -146,6 +165,27 @@ export interface SimConfig {
     /** regrowth multiplier = moistureBase + moistureGain * moisture */
     moistureBase: number;
     moistureGain: number;
+    /** per-tick chance that a storm drops a lightning bolt */
+    lightningChance: number;
+    /** plants within this radius of a strike are scorched */
+    lightningRadius: number;
+    /** rabbits shelter in storms above this energy */
+    shelterEnergy: number;
+    /** wolves only hunt in storms below this energy fraction */
+    stormHuntBelow: number;
+    /** water level below which shore rank 1 / 2 / 3 tiles dry out */
+    dryRank: [number, number, number];
+  };
+
+  /** time-of-day behaviour */
+  time: {
+    /** wolves catch more easily at dusk and night */
+    wolfNightCatchMul: number;
+    /** rabbits graze faster at dawn and dusk */
+    rabbitTwilightBiteMul: number;
+    /** hot midday rest window (day fraction) */
+    siestaFrom: number;
+    siestaTo: number;
   };
 
   events: {
@@ -209,6 +249,34 @@ export const DEFAULT_CONFIG: SimConfig = {
     sprintCost: 0.4,
   },
 
+  deer: {
+    maxEnergy: 140,
+    metabolism: 0.4,
+    restMetabolismMul: 0.5,
+    walkSpeed: 0.26,
+    runSpeed: 0.6,
+    vision: 4.6,
+    maturityDays: 9,
+    lifespanDays: 70,
+    lifespanJitter: 0.2,
+    reproThreshold: 85,
+    reproCooldownDays: 13,
+    litterMin: 1,
+    litterMax: 1,
+    birthEnergy: 35,
+    birthCost: 8,
+    thirstPerTick: 0.3,
+    thirstSeek: 38,
+    plantEnergy: 0.6,
+    biteSize: 10,
+    giveUp: 30,
+    fullEnergy: 125,
+    wolfCatchMul: 0.28,
+    wolfEnergyMul: 2.2,
+    fleeCost: 0.2,
+    browseEnergy: 0.62,
+  },
+
   wolf: {
     maxEnergy: 120,
     metabolism: 0.48, // ~9.6 energy/day → ~12 days from full to starving
@@ -251,6 +319,18 @@ export const DEFAULT_CONFIG: SimConfig = {
     moistureStart: 0.6,
     moistureBase: 0.5,
     moistureGain: 1,
+    lightningChance: 0.02,
+    lightningRadius: 1.7,
+    shelterEnergy: 40,
+    stormHuntBelow: 0.3,
+    dryRank: [0.5, 0.3, 0.14],
+  },
+
+  time: {
+    wolfNightCatchMul: 1.1,
+    rabbitTwilightBiteMul: 1.1,
+    siestaFrom: 0.28,
+    siestaTo: 0.52,
   },
 
   events: {
@@ -274,6 +354,7 @@ export function cloneConfig(c: SimConfig = DEFAULT_CONFIG): SimConfig {
 export const ECONOMY = {
   rabbitCost: 4,
   wolfCost: 15,
+  deerCost: 10,
   /** cost per tile painted with the plant brush */
   plantTileCost: 0.25,
   /** points per day at 100 % biodiversity; scaled by the Shannon score */

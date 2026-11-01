@@ -26,7 +26,11 @@ const TOOLS: { id: Tool; emoji: string; key: string }[] = [
   { id: 'wolf', emoji: '🐺', key: '3' },
   { id: 'inspect', emoji: '🔍', key: '4' },
   { id: 'remove', emoji: '✋', key: '5' },
+  { id: 'deer', emoji: '🦌', key: '6' },
 ];
+
+const SPECIES_ICON = ['🐇', '🐺', '🦌'];
+const SPECIES_NAME = [STR.species.rabbit, STR.species.wolf, STR.species.deer];
 
 export class App {
   save: SaveData = load();
@@ -157,7 +161,7 @@ export class App {
     const toolbar = h('div', { class: 'toolbar', role: 'toolbar', 'aria-label': 'Araçlar' });
     for (const t of TOOLS) {
       const label = STR.tools[t.id];
-      const cost = t.id === 'rabbit' ? ECONOMY.rabbitCost : t.id === 'wolf' ? ECONOMY.wolfCost : t.id === 'plant' ? ECONOMY.plantTileCost : 0;
+      const cost = t.id === 'rabbit' ? ECONOMY.rabbitCost : t.id === 'wolf' ? ECONOMY.wolfCost : t.id === 'deer' ? ECONOMY.deerCost : t.id === 'plant' ? ECONOMY.plantTileCost : 0;
       const tipKey = `${t.id}Tip` as 'plantTip';
       const btn = h(
         'button',
@@ -221,7 +225,7 @@ export class App {
     this.maybeTutorial();
   }
 
-  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; weather: boolean; randomEvents: boolean }): void {
+  startSandbox(o: { map: 'forest' | 'river'; seed: number; seasons: boolean; weather: boolean; deer?: number; randomEvents: boolean }): void {
     this.demo = false;
     this.modal.close();
     this.newSession({ mode: 'sandbox', ...o });
@@ -455,6 +459,14 @@ export class App {
         case 'eventEnd':
           this.banner(fmt(STR.events.ended, { name: STR.events.names[e.kind] }), '', 'good', 4000);
           break;
+        case 'lightning':
+          fx.add('catch', e.x, e.y);
+          this.renderer.weatherFx.flash = 1;
+          this.tip('lightning', 'capacity');
+          break;
+        case 'flood':
+          this.tip(e.rising ? 'flood' : 'dry', 'capacity');
+          break;
         case 'weather':
           if (e.kind === Wx.Storm || e.kind === Wx.Heat || e.kind === Wx.Fog || e.kind === Wx.Snow) this.tip('weather', 'capacity');
           break;
@@ -485,7 +497,7 @@ export class App {
   }
 
   /** contextual tip shown once per save */
-  tip(id: 'pyramid' | 'overgrazing' | 'firstWolf' | 'cycle' | 'drought' | 'weather', card: string): void {
+  tip(id: 'pyramid' | 'overgrazing' | 'firstWolf' | 'cycle' | 'drought' | 'weather' | 'lightning' | 'flood' | 'dry', card: string): void {
     if (this.demo || this.save.tipsSeen.includes(id)) return;
     this.save.tipsSeen.push(id);
     save(this.save);
@@ -610,12 +622,12 @@ export class App {
         return;
       }
       const sp = a.species[i] as Species;
-      const sc = sp === Species.Rabbit ? w.cfg.rabbit : w.cfg.wolf;
+      const sc = w.speciesCfg(sp);
       const e = a.energy[i]! / sc.maxEnergy;
       const status = e > 0.5 ? ['healthy', I.healthy, '💚'] : e > 0.25 ? ['hungry', I.hungry, '🟡'] : ['starving', I.starving, '🔴'];
       const following = this.renderer.cam.follow === this.selectedUid;
       add(
-        h('h3', {}, sp === Species.Rabbit ? '🐇' : '🐺', ' ', sp === Species.Rabbit ? STR.species.rabbit : STR.species.wolf, h('span', { style: 'color:var(--ink-soft);font-size:12px;margin-left:auto' }, `${I.id} ${a.uid[i]}`)),
+        h('h3', {}, SPECIES_ICON[sp], ' ', SPECIES_NAME[sp], h('span', { style: 'color:var(--ink-soft);font-size:12px;margin-left:auto' }, `${I.id} ${a.uid[i]}`)),
         h('span', { class: `status-badge status-${status[0]}` }, status[2]!, ' ', status[1]!),
         row(I.energy, `${Math.round(a.energy[i]!)} / ${sc.maxEnergy}`),
         h('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': String(Math.round(e * 100)), 'aria-valuemin': '0', 'aria-valuemax': '100' }, h('i', { style: `width:${Math.max(0, e * 100)}%;background:var(--${status[0]})` })),
@@ -675,7 +687,7 @@ export class App {
     if (s.status !== 'playing') return;
     const r = s.apply(this.tool, wx, wy, this.brush);
     if (r.ok) {
-      if (this.tool === 'rabbit' || this.tool === 'wolf') {
+      if (this.tool === 'rabbit' || this.tool === 'wolf' || this.tool === 'deer') {
         this.renderer.fx.add('place', wx, wy);
         this.audio.click('pop');
         if (this.tool === 'wolf') this.tip('firstWolf', 'keystone');
@@ -722,9 +734,9 @@ export class App {
     if (i >= 0) {
       const a = w.agents;
       const sp = a.species[i] as Species;
-      const sc = sp === Species.Rabbit ? w.cfg.rabbit : w.cfg.wolf;
+      const sc = w.speciesCfg(sp);
       const e = Math.round((a.energy[i]! / sc.maxEnergy) * 100);
-      this.floatTip.show(`<b>${sp === Species.Rabbit ? '🐇 ' + STR.species.rabbit : '🐺 ' + STR.species.wolf}</b> · ${STR.states[a.state[i] as AState]}<br>${STR.inspector.energy}: %${e}`, cx, cy);
+      this.floatTip.show(`<b>${SPECIES_ICON[sp]} ${SPECIES_NAME[sp]}</b> · ${STR.states[a.state[i] as AState]}<br>${STR.inspector.energy}: %${e}`, cx, cy);
     } else if (w.grid.inBounds(Math.floor(wx), Math.floor(wy))) {
       const ti = w.grid.idx(Math.floor(wx), Math.floor(wy));
       const t = w.grid.tiles[ti]!;
@@ -798,7 +810,7 @@ export class App {
       if (mode === 'tool' && prev) {
         const [wx, wy] = this.renderer.cam.toWorld(x, y);
         this.hoverWorld = [wx, wy];
-        const spacing = this.tool === 'rabbit' ? 0.8 : this.tool === 'wolf' ? Infinity : Math.max(0.5, this.brush * 0.6);
+        const spacing = this.tool === 'rabbit' ? 0.8 : this.tool === 'wolf' || this.tool === 'deer' ? Infinity : Math.max(0.5, this.brush * 0.6);
         if (lastPaint && Math.hypot(wx - lastPaint[0], wy - lastPaint[1]) >= spacing) {
           lastPaint = [wx, wy];
           this.applyToolAt(wx, wy, true);
@@ -860,7 +872,7 @@ export class App {
       if (k === ' ') this.togglePlay();
       else if (k === 'n' || k === 'N') this.stepOnce();
       else if (k === 't' || k === 'T') this.cycleSpeed();
-      else if (k >= '1' && k <= '5') this.setTool(TOOLS[Number(k) - 1]!.id);
+      else if (k >= '1' && k <= String(TOOLS.length)) this.setTool(TOOLS[Number(k) - 1]!.id);
       else if (k === '[') this.setBrush(this.brush - 0.5);
       else if (k === ']') this.setBrush(this.brush + 0.5);
       else if (k === '+' || k === '=') this.zoomBy(1.25);

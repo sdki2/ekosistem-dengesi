@@ -18,6 +18,16 @@ export class StatsPanel {
   private divVal: HTMLElement;
   private today: HTMLElement;
   private handleMini: HTMLElement;
+  private wxSection: HTMLElement;
+  private counterRow!: HTMLElement;
+  private wxIcon: HTMLElement;
+  private wxName: HTMLElement;
+  private wxText: HTMLElement;
+  private wxNext: HTMLElement;
+  private moistBar: HTMLElement;
+  private moistVal: HTMLElement;
+  private waterBar: HTMLElement;
+  private waterVal: HTMLElement;
   reducedMotion = false;
   /** called when the pyramid status changes to 'bad' */
   onPyramidBad: (() => void) | null = null;
@@ -54,18 +64,38 @@ export class StatsPanel {
     this.phase = new PhasePlot(phaseCanvas);
     this.phaseSection = h('div', { class: 'section' }, h('h4', {}, '🔄 ', S.phase, h('span', { class: 'info', tip: S.phaseTip }, 'ⓘ')), h('div', { class: 'chart-wrap' }, phaseCanvas));
     this.handleMini = h('span', { class: 'mini' });
+    this.wxIcon = h('div', { class: 'wx-icon', 'aria-hidden': 'true' });
+    this.wxName = h('b', { class: 'wx-name' });
+    this.wxText = h('div', { class: 'wx-text' });
+    this.wxNext = h('span', { class: 'wx-next' });
+    this.moistBar = h('i');
+    this.moistVal = h('span');
+    this.waterBar = h('i');
+    this.waterVal = h('span');
+    const meter = (label: string, bar: HTMLElement, val: HTMLElement, cls: string) =>
+      h('div', { class: 'meter' }, h('div', { class: 'meter-top' }, h('span', {}, label), val), h('div', { class: `bar ${cls}` }, bar));
+    this.wxSection = h(
+      'div',
+      { class: 'section wx-card' },
+      h('h4', {}, S.weatherTitle, this.wxNext),
+      h('div', { class: 'wx-row' }, this.wxIcon, h('div', {}, this.wxName, this.wxText)),
+      meter(S.moisture, this.moistBar, this.moistVal, 'moist'),
+      meter(S.waterLevel, this.waterBar, this.waterVal, 'water'),
+    );
 
     this.el = h(
       'aside',
       { class: 'stats', 'aria-label': S.title },
       h('button', { class: 'drawer-handle', onclick: () => this.el.classList.toggle('open'), 'aria-label': S.drawer }, h('span', { class: 'grip' }), '📊 ', S.drawer, this.handleMini),
-      h('div', { class: 'section' }, h('div', { class: 'counters' }, counter('plants', '🌱', S.plantCover), counter('rabbits', '🐇', STR.species.rabbits), counter('wolves', '🐺', STR.species.wolves)), this.today),
+      this.wxSection,
+      h('div', { class: 'section' }, h('div', { class: 'counters' }, counter('plants', '🌱', S.plantCover), counter('rabbits', '🐇', STR.species.rabbits), counter('wolves', '🐺', STR.species.wolves), counter('deer', '🦌', STR.species.deers)), this.today),
       h('div', { class: 'section-grid' },
         h('div', { class: 'section' },
           h('h4', {}, '📈 ', S.population, seg),
           h('div', { class: 'chart-wrap' }, popCanvas),
           h('div', { class: 'legend' },
             h('span', { style: 'color:var(--rabbit)' }, h('i', { style: 'background:var(--rabbit)' }), '🐇 ', STR.species.rabbits),
+            h('span', { style: 'color:#a8793c' }, h('i', { class: 'dash', style: 'background:#a8793c' }), '🦌 ', STR.species.deers, ' ×5'),
             h('span', { style: 'color:var(--wolf)' }, h('i', { class: 'dash', style: 'background:var(--wolf)' }), '🐺 ', STR.species.wolves, ' ×10'),
             h('span', { style: 'color:var(--plant)' }, h('i', { class: 'dash', style: 'background:var(--plant)' }), '🌱 %'),
           ),
@@ -101,10 +131,15 @@ export class StatsPanel {
     animateNumber(this.vals.plants!, cover, (v) => `%${v.toFixed(0)}`, this.reducedMotion);
     animateNumber(this.vals.rabbits!, w.counts[0], (v) => num(Math.round(v)), this.reducedMotion);
     animateNumber(this.vals.wolves!, w.counts[1], (v) => num(Math.round(v)), this.reducedMotion);
+    const hasDeer = w.everPresent[2] === true;
+    this.vals.deer!.closest('.counter')!.toggleAttribute('hidden', !hasDeer);
+    (this.counterRow ??= this.el.querySelector('.counters') as HTMLElement).style.gridTemplateColumns = hasDeer ? 'repeat(4, 1fr)' : '';
+    if (hasDeer) animateNumber(this.vals.deer!, w.counts[2]!, (v) => num(Math.round(v)), this.reducedMotion);
     if (n > 1) {
       this.setTrend('plants', cover - hist.plants[back]!, 1);
       this.setTrend('rabbits', w.counts[0] - hist.rabbits[back]!, Math.max(1, hist.rabbits[back]! * 0.03));
       this.setTrend('wolves', w.counts[1] - hist.wolves[back]!, 0.5);
+      if (hasDeer) this.setTrend('deer', w.counts[2]! - (hist.deer[back] ?? 0), 0.5);
     }
     const t = w.today;
     const S = STR.stats;
@@ -117,7 +152,25 @@ export class StatsPanel {
     const score = w.diversity();
     this.gaugeKnob.style.left = `${Math.max(0, Math.min(100, score))}%`;
     animateNumber(this.divVal, score, (v) => v.toFixed(0), this.reducedMotion);
+    this.updateWeather(w);
     this.handleMini.textContent = `🌱%${cover.toFixed(0)} · 🐇${w.counts[0]} · 🐺${w.counts[1]}`;
+  }
+
+  private updateWeather(w: Session['world']): void {
+    const H = STR.hud;
+    this.wxSection.style.display = w.weatherEnabled ? '' : 'none';
+    if (!w.weatherEnabled) return;
+    const k = w.wx.kind;
+    this.wxIcon.textContent = H.weatherIcons[k]!;
+    this.wxName.textContent = H.weatherNames[k]!;
+    this.wxText.textContent = H.weatherEffects[k]!;
+    this.wxNext.textContent = `${STR.stats.nextWeather}: ${H.weatherIcons[w.wx.next]} ${H.weatherNames[w.wx.next]}`;
+    const mo = Math.round(w.wx.moisture * 100);
+    const wa = Math.round(w.wx.water * 100);
+    this.moistBar.style.width = `${mo}%`;
+    this.waterBar.style.width = `${wa}%`;
+    this.moistVal.textContent = `%${mo}`;
+    this.waterVal.textContent = `%${wa}`;
   }
 
   /** chart redraw (~every frame when visible; cheap) */
@@ -129,7 +182,7 @@ export class StatsPanel {
     let plantB = 0;
     for (let i = 0; i < w.grid.plant.length; i++) plantB += w.grid.plant[i]!;
     const status = this.pyr.update(
-      { plants: Math.round((plantB / 100) * BIOMASS.plantTile), rabbits: Math.round(w.counts[0] * BIOMASS.rabbit), wolves: Math.round(w.counts[1] * BIOMASS.wolf) },
+      { plants: Math.round((plantB / 100) * BIOMASS.plantTile), rabbits: Math.round(w.counts[0] * BIOMASS.rabbit + w.counts[2]! * BIOMASS.deer), wolves: Math.round(w.counts[1] * BIOMASS.wolf) },
       this.reducedMotion,
     );
     if (status !== this.lastPyr) {

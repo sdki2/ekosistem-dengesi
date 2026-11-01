@@ -27,6 +27,7 @@ export const BIOMASS = {
   plantTile: 1,
   rabbit: 1.5,
   wolf: 6,
+  deer: 4,
 };
 
 export interface DayLog {
@@ -34,6 +35,7 @@ export interface DayLog {
   plantCover: number;
   rabbits: number;
   wolves: number;
+  deer: number;
   rabbitBirths: number;
   wolfBirths: number;
   rabbitDeaths: Record<DeathCause, number>;
@@ -42,7 +44,7 @@ export interface DayLog {
 }
 
 export function emptyDeaths(): Record<DeathCause, number> {
-  return { starved: 0, old: 0, thirst: 0, eaten: 0, disease: 0, removed: 0 };
+  return { starved: 0, old: 0, thirst: 0, eaten: 0, disease: 0, removed: 0, weather: 0 };
 }
 
 /** Time series recorded during a run (shared by charts, CSV and collapse narrative). */
@@ -52,6 +54,7 @@ export class History {
   plants: number[] = [];
   rabbits: number[] = [];
   wolves: number[] = [];
+  deer: number[] = [];
   shannon: number[] = [];
   days: DayLog[] = [];
 
@@ -61,6 +64,7 @@ export class History {
     h.plants = this.plants.slice();
     h.rabbits = this.rabbits.slice();
     h.wolves = this.wolves.slice();
+    h.deer = this.deer.slice();
     h.shannon = this.shannon.slice();
     h.days = this.days.map((d) => ({ ...d, rabbitDeaths: { ...d.rabbitDeaths }, wolfDeaths: { ...d.wolfDeaths } }));
     return h;
